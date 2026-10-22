@@ -133,6 +133,8 @@ func ServiceErrorMessage(code string) string {
 	switch code {
 	case "incompatible_version":
 		return "Версия службы несовместима с ядром приложения. Обнови службу."
+	case "transport_upgrade_required":
+		return "Профиль сохранён, но параметры KCP требуют адаптации: congestion, readBufferSize и writeBufferSize удалены upstream; допустимый TTI — 10–1000 мс. Сетевые изменения не применялись."
 	case "invalid_configuration":
 		return "Служба отклонила конфигурацию. Проверь профиль."
 	case "operation_timeout":

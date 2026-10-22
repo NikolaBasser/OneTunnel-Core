@@ -198,6 +198,8 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 	if e != nil {
 		value := "operation_failed"
 		switch {
+		case errors.Is(e, protocol.ErrTransportUpgrade):
+			value = "transport_upgrade_required"
 		case errors.Is(e, protocol.ErrConfiguration):
 			value = "invalid_configuration"
 		case errors.Is(e, context.DeadlineExceeded):
@@ -456,6 +458,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		return protocol.ErrConfiguration
 	}
 	p := request.Profile
+	if err = protocol.CheckEngineCompatibility(p.Source, p.Protocol); err != nil {
+		return err
+	}
 	local, bridge := 0, 0
 	if p.Protocol >= 2 {
 		local, err = freePort()
