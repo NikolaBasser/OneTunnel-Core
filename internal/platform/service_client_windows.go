@@ -80,7 +80,7 @@ func trustedServicePipe(ctx context.Context) (net.Conn, int64, error) {
 	return pipe, int64(uint64(born.HighDateTime)<<32 | uint64(born.LowDateTime)), nil
 }
 
-func CallService(ctx context.Context, request control.Request) (control.Response, int64, error) {
+func callServiceFrame(ctx context.Context, request control.Request) (control.Response, int64, error) {
 	connect, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	pipe, epoch, err := trustedServicePipe(connect)

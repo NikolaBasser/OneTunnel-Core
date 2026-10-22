@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"sync"
 	"time"
 )
@@ -104,6 +105,18 @@ func (m *Manager) reply(result *string, code string) Response {
 	return Response{Version: Version, Instance: m.instance, State: m.state, Result: result, Error: err}
 }
 func (m *Manager) Dispatch(ctx context.Context, request Request) Response {
+	if strings.HasPrefix(request.Command, "desktop.") {
+		request.Command = strings.TrimPrefix(request.Command, "desktop.")
+		reply := m.dispatch(ctx, request)
+		m.mu.RLock()
+		reply.State = m.state
+		reply.Revision = m.revision
+		m.mu.RUnlock()
+		return reply
+	}
+	return m.dispatch(ctx, request)
+}
+func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 	if code := Validate(request); code != "" {
 		return m.reply(nil, code)
 	}

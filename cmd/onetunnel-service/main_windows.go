@@ -20,7 +20,7 @@ type service struct{ owner, directory string }
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println("OneTunnel Go core 0.2.0 · control API 1 · embedded Windows runtime")
+		fmt.Println("OneTunnel Go core 0.3.0 · control API 1 · embedded Windows runtime")
 		return
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()

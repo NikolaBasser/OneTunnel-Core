@@ -19,8 +19,11 @@ type DesktopReply struct {
 	Available   bool
 	Response    control.Response
 	PeerStarted int64
+	CheckedAt   uint64
 	Message     string
 	Prepared    *Applied `json:",omitempty"`
+	Actions     DesktopActions
+	Display     DesktopDisplay
 }
 type ServiceCaller func(context.Context, control.Request) (control.Response, int64, error)
 
@@ -30,6 +33,7 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 		if err == nil {
 			if env, ok := value.(Environment); ok {
 				reply.Environment = &env
+				reply = a.projectDesktop(reply, env)
 			}
 		}
 	}()
@@ -39,24 +43,52 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 	}
 	response, epoch, err := call(ctx, control.Request{Version: control.Version, Command: command, Profile: p, FullDevice: full})
 	if err != nil {
-		a.desktopState.Available = false
+		a.consumeDesktop(platform.ServiceObservation{Available: false, CheckedAt: platform.ObservationClock()})
 		code := "service_unavailable"
-		a.desktopState.Response.Error = &code
-		a.desktopState.Message = platform.ServiceErrorMessage(code)
+		reply = a.desktopState
+		reply.Response.Error = &code
+		reply.Message = platform.ServiceErrorMessage(code)
+		return reply
+	}
+	if command == "stop" || command == "recover" {
 		a.desktopState.Prepared = nil
-		return a.desktopState
 	}
-	a.desktopState = DesktopReply{Available: true, Response: response, PeerStarted: epoch}
+	a.consumeDesktop(platform.ServiceObservation{Available: true, Response: response, PeerStarted: epoch, CheckedAt: platform.ObservationClock()})
+	reply = a.desktopState
+	reply.Response.Error = response.Error
+	reply.Response.Result = response.Result
 	if response.Error != nil {
-		a.desktopState.Message = platform.ServiceErrorMessage(*response.Error)
+		reply.Message = platform.ServiceErrorMessage(*response.Error)
+	} else {
+		switch command {
+		case "start":
+			reply.Message = "Соединение запущено. Проверка доступа доступна отдельно."
+			if reply.Response.State.ClockSynchronized {
+				reply.Message = "Время скорректировано внутри движка; часы Windows не изменены."
+			}
+		case "stop":
+			reply.Message = "Подключение остановлено."
+		case "recover":
+			reply.Message = "Подключение очищено, блокировка kill switch снята. Обычная сеть восстановлена."
+		}
 	}
-	return a.desktopState
+	return reply
 }
 func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 	command := strings.TrimPrefix(r.Command, "connection.")
 	switch command {
+	case "toggle":
+		before := a.desktopCall(ctx, "status", nil, false)
+		if !before.Available || before.Response.Error != nil {
+			return before, nil
+		}
+		if before.Response.State.Active {
+			return a.desktopCall(ctx, "stop", nil, false), nil
+		}
+		r.Command = "connection.start"
+		return a.desktop(ctx, r)
 	case "status", "stop", "probe":
 		return a.desktopCall(ctx, command, nil, false), nil
 	case "recover":
@@ -81,6 +113,7 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 		}
 		return a.desktopCall(ctx, "recover", nil, false), nil
 	case "start":
+		a.desktopState.Prepared = nil
 		before := a.desktopCall(ctx, "status", nil, false)
 		if !before.Available || before.Response.Error != nil {
 			return before, nil
@@ -101,11 +134,13 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			before.Message = "Сервер удалён из подписки. Выбери актуальный узел."
 			view := presentationApplied(prepared)
 			before.Prepared = &view
+			a.desktopState.Prepared = &view
 			return before, nil
 		}
 		reply := a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
 		view := presentationApplied(prepared)
 		reply.Prepared = &view
+		a.desktopState.Prepared = &view
 		return reply, nil
 	default:
 		return nil, errors.New("Неизвестная команда подключения.")

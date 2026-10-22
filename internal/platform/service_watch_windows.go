@@ -11,6 +11,7 @@ type ServiceObservation struct {
 	Response    control.Response
 	PeerStarted int64
 	Message     string
+	CheckedAt   uint64
 }
 
 func WatchPublicService(ctx context.Context, emit func(ServiceObservation) error) error {
@@ -28,14 +29,14 @@ func WatchPublicService(ctx context.Context, emit func(ServiceObservation) error
 				pipe.SetReadDeadline(time.Now().Add(35 * time.Second))
 				var reply control.Response
 				reply, err = control.ReadFrame[control.Response](pipe)
-				if err != nil || reply.Version != control.Version {
+				if err != nil || reply.Version != control.Version || !servicePipeCurrent(pipe) {
 					break
 				}
 				if reply.Error != nil {
 					fallback = *reply.Error == "unknown_command"
 					break
 				}
-				last = ServiceObservation{Available: true, Response: reply, PeerStarted: epoch}
+				last = ServiceObservation{Available: true, Response: reply, PeerStarted: epoch, CheckedAt: ObservationClock()}
 				if err = emit(last); err != nil {
 					pipe.Close()
 					stop()
@@ -55,7 +56,7 @@ func WatchPublicService(ctx context.Context, emit func(ServiceObservation) error
 					if e != nil {
 						break
 					}
-					last = ServiceObservation{Available: true, Response: reply, PeerStarted: birth}
+					last = ServiceObservation{Available: true, Response: reply, PeerStarted: birth, CheckedAt: ObservationClock()}
 					if e = emit(last); e != nil {
 						return e
 					}
@@ -72,6 +73,7 @@ func WatchPublicService(ctx context.Context, emit func(ServiceObservation) error
 			return ctx.Err()
 		}
 		last.Available = false
+		last.CheckedAt = ObservationClock()
 		last.Message = ServiceErrorMessage("service_unavailable")
 		if err := emit(last); err != nil {
 			return err

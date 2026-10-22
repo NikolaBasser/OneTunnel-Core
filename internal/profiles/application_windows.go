@@ -35,6 +35,9 @@ type Request struct {
 	Path           string
 	FullDevice     bool
 	TransportInput *TransportInput
+	Observation    *platform.ServiceObservation
+	Context        *DesktopContext
+	Retained       *DesktopReply
 }
 type Applied struct {
 	Document   Document
@@ -58,11 +61,15 @@ type Environment struct {
 	SingBox        bool
 }
 type Application struct {
-	Store        *Store
-	Directory    string
-	Downloader   func(context.Context, string) (ImportResult, error)
-	ServiceCall  ServiceCaller
-	desktopState DesktopReply
+	Store           *Store
+	Directory       string
+	Downloader      func(context.Context, string) (ImportResult, error)
+	ServiceCall     ServiceCaller
+	desktopState    DesktopReply
+	desktopContext  DesktopContext
+	desktopChecked  uint64
+	desktopRevision uint64
+	desktopRetired  map[string]bool
 }
 
 func (a *Application) apply(batch ImportResult, source, group string) (Applied, error) {
@@ -237,6 +244,15 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 	if r.Version != 1 {
 		return nil, errors.New("Несовместимая версия ядра профилей. Используй полную новую сборку.")
 	}
+	if a.desktopState.Response.Instance == "" && r.Retained != nil {
+		a.consumeDesktop(platform.ServiceObservation{Available: true, Response: r.Retained.Response, PeerStarted: r.Retained.PeerStarted, CheckedAt: r.Retained.CheckedAt})
+		// A new user host retains protection facts but must reauthenticate
+		// connectivity with the real service before enabling network actions.
+		a.desktopState.Available = false
+	}
+	if r.Context != nil {
+		a.desktopContext = *r.Context
+	}
 	if strings.HasPrefix(r.Command, "ui.") {
 		r.Command = strings.TrimPrefix(r.Command, "ui.")
 		value, err := a.Handle(ctx, r)
@@ -246,6 +262,8 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.desktop(ctx, r)
 	}
 	switch r.Command {
+	case "desktop.context", "desktop.observe", "desktop.unavailable":
+		return a.desktopProjectionCommand(r)
 	case "editor.load":
 		d, err := a.Store.Load()
 		if err != nil {
