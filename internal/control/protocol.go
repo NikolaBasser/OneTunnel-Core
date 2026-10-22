@@ -48,6 +48,7 @@ type State struct {
 	ProfileID         *string `json:"ProfileId"`
 }
 type Response struct {
+	Revision uint64  `json:"Revision,omitempty"`
 	Version  int     `json:"Version"`
 	Instance string  `json:"Instance"`
 	State    State   `json:"State"`
@@ -68,7 +69,7 @@ func Validate(r Request) string {
 		return "invalid_request"
 	}
 	switch r.Command {
-	case "hello", "status", "stop", "recover", "probe":
+	case "hello", "status", "watch", "stop", "recover", "probe":
 		return ""
 	case "start":
 		p := r.Profile

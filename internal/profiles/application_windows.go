@@ -10,28 +10,31 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unicode/utf8"
 )
 
 type Request struct {
-	Version      int
-	Command      string
-	Name         string
-	Source       string
-	Group        string
-	Subscription bool
-	Expanded     bool
-	Requested    *int
-	Profile      *Profile
-	Existing     []Profile
-	Incoming     []Profile
-	Document     *Document
-	ID           string
-	Transport    *protocol.TransportOptions
-	Data         []byte
-	Encrypt      bool
-	Path         string
+	Version        int
+	Command        string
+	Name           string
+	Source         string
+	Group          string
+	Subscription   bool
+	Expanded       bool
+	Requested      *int
+	Profile        *Profile
+	Existing       []Profile
+	Incoming       []Profile
+	Document       *Document
+	ID             string
+	Transport      *protocol.TransportOptions
+	Data           []byte
+	Encrypt        bool
+	Path           string
+	FullDevice     bool
+	TransportInput *TransportInput
 }
 type Applied struct {
 	Document   Document
@@ -46,17 +49,20 @@ type Applied struct {
 	Retired    bool
 }
 type Environment struct {
-	Root          string
-	Administrator bool
-	NeedsRecovery bool
-	Awg           bool
-	Xray          bool
-	SingBox       bool
+	MaxImportBytes int
+	Root           string
+	Administrator  bool
+	NeedsRecovery  bool
+	Awg            bool
+	Xray           bool
+	SingBox        bool
 }
 type Application struct {
-	Store      *Store
-	Directory  string
-	Downloader func(context.Context, string) (ImportResult, error)
+	Store        *Store
+	Directory    string
+	Downloader   func(context.Context, string) (ImportResult, error)
+	ServiceCall  ServiceCaller
+	desktopState DesktopReply
 }
 
 func (a *Application) apply(batch ImportResult, source, group string) (Applied, error) {
@@ -113,6 +119,13 @@ func (a *Application) apply(batch ImportResult, source, group string) (Applied, 
 	return r, nil
 }
 func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error) {
+	if r.TransportInput != nil {
+		parsed, err := r.TransportInput.Parse()
+		if err != nil {
+			return Applied{}, err
+		}
+		r.Transport = &parsed
+	}
 	source := strings.TrimSpace(r.Source)
 	batch := IsURL(source) || strings.HasPrefix(source, "[") && !strings.Contains(strings.ToLower(source), "[interface]") || strings.HasPrefix(source, "{") && !strings.Contains(source, `"protocol"`) || strings.Contains(source, "\n") && !strings.Contains(strings.ToLower(source), "[interface]") && !strings.HasPrefix(source, "{") || !strings.Contains(source, "://") && !strings.HasPrefix(source, "[") && !strings.HasPrefix(source, "{")
 	if strings.HasPrefix(source, "{") && strings.Contains(source, `"outbounds"`) {
@@ -224,7 +237,55 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 	if r.Version != 1 {
 		return nil, errors.New("Несовместимая версия ядра профилей. Используй полную новую сборку.")
 	}
+	if strings.HasPrefix(r.Command, "ui.") {
+		r.Command = strings.TrimPrefix(r.Command, "ui.")
+		value, err := a.Handle(ctx, r)
+		return presentationValue(value), err
+	}
+	if strings.HasPrefix(r.Command, "connection.") {
+		return a.desktop(ctx, r)
+	}
 	switch r.Command {
+	case "editor.load":
+		d, err := a.Store.Load()
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range d.Profiles {
+			if p.ID == r.ID {
+				return p, nil
+			}
+		}
+		return nil, ErrImport
+	case "transport.defaults":
+		return defaults(), nil
+	case "profile.view":
+		if r.Requested == nil || *r.Requested < 0 || *r.Requested > 5 {
+			return nil, ErrImport
+		}
+		return profileView(*r.Requested), nil
+	case "service.start":
+		deadline, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if err := platform.StartPublicService(deadline); err != nil {
+			return nil, err
+		}
+		return a.desktopCall(ctx, "status", nil, false), nil
+	case "service.install":
+		state := a.desktopCall(ctx, "status", nil, false)
+		if state.Available && (state.Response.State.Active || state.Response.State.NeedsRecovery || state.Response.State.TrafficLocked) {
+			code := "recovery_required"
+			state.Response.Error = &code
+			state.Message = platform.ServiceErrorMessage(code)
+			return state, nil
+		}
+		if existsProfileFile(a.Store.Root, "session.json") || existsProfileFile(a.Store.Root, "kill-switch.json") {
+			return nil, errors.New("Сначала восстанови подключение прежней версии.")
+		}
+		if err := platform.ElevateInstall(a.Directory); err != nil {
+			return nil, err
+		}
+		return a.desktopCall(ctx, "status", nil, false), nil
 	case "hello":
 		embedded := embeddedCapabilities(a.Directory)
 		has := func(name string) bool {
@@ -237,7 +298,15 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 				legacy = true
 			}
 		}
-		return Environment{Root: a.Store.Root, Administrator: windows.GetCurrentProcessToken().IsElevated(), NeedsRecovery: legacy, Awg: has("amneziawg.exe"), Xray: has("xray.exe"), SingBox: has("sing-box.exe")}, nil
+		return Environment{Root: a.Store.Root, Administrator: windows.GetCurrentProcessToken().IsElevated(), NeedsRecovery: legacy, Awg: has("amneziawg.exe"), Xray: has("xray.exe"), SingBox: has("sing-box.exe"), MaxImportBytes: MaxBytes}, nil
+	case "editor.preview":
+		return importPreview(r.Source, r.Name), nil
+	case "editor.import":
+		value, err := a.Handle(ctx, Request{Version: 1, Command: "file.read", Path: r.Path})
+		if err != nil {
+			return nil, err
+		}
+		return importPreview(value.(string), strings.TrimSuffix(filepath.Base(r.Path), filepath.Ext(r.Path))), nil
 	case "parse":
 		return Parse(r.Name, r.Source, r.Requested)
 	case "validate":

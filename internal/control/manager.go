@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
+	"time"
 )
 
 type Backend interface {
@@ -27,6 +28,8 @@ type Manager struct {
 	generation uint64
 	failed     bool
 	closing    bool
+	changed    chan struct{}
+	revision   uint64
 }
 
 func NewManager(factory Factory) (*Manager, error) {
@@ -34,7 +37,7 @@ func NewManager(factory Factory) (*Manager, error) {
 	if _, err := rand.Read(token[:]); err != nil {
 		return nil, err
 	}
-	m := &Manager{instance: hex.EncodeToString(token[:]), factory: factory, gate: make(chan struct{}, 1), state: State{Status: "Отключено"}}
+	m := &Manager{instance: hex.EncodeToString(token[:]), factory: factory, gate: make(chan struct{}, 1), changed: make(chan struct{}), state: State{Status: "Отключено"}}
 	if err := m.restart(); err != nil {
 		return nil, err
 	}
@@ -47,7 +50,10 @@ func (m *Manager) store(s State, generation uint64) {
 		return
 	}
 	s.ProfileID = m.profileID
-	m.state = s
+	if m.state != s {
+		m.state = s
+		m.notifyLocked()
+	}
 }
 func (m *Manager) fail(generation uint64) {
 	m.mu.Lock()
@@ -59,6 +65,7 @@ func (m *Manager) fail(generation uint64) {
 	m.state.Active = false
 	m.state.NeedsRecovery = true
 	m.state.Status = "Адаптер остановился · требуется восстановление; состояние защиты сохранено"
+	m.notifyLocked()
 }
 func (m *Manager) restart() error {
 	m.mu.Lock()
@@ -90,13 +97,17 @@ func (m *Manager) reply(result *string, code string) Response {
 	if code != "" {
 		err = &code
 	}
-	return Response{Version: Version, Instance: m.instance, State: m.snapshot(), Result: result, Error: err}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// Ordinary API-v1 replies retain their schema for older installed clients.
+	// Revisions are sent on the explicitly negotiated watch stream only.
+	return Response{Version: Version, Instance: m.instance, State: m.state, Result: result, Error: err}
 }
 func (m *Manager) Dispatch(ctx context.Context, request Request) Response {
 	if code := Validate(request); code != "" {
 		return m.reply(nil, code)
 	}
-	if request.Command == "hello" || request.Command == "status" {
+	if request.Command == "hello" || request.Command == "status" || request.Command == "watch" {
 		return m.reply(nil, "")
 	}
 	select {
@@ -147,6 +158,7 @@ func (m *Manager) Dispatch(ctx context.Context, request Request) Response {
 	}
 	message.State.ProfileID = m.profileID
 	m.state = message.State
+	m.notifyLocked()
 	m.mu.Unlock()
 	code := ""
 	if message.Error != nil {
@@ -157,10 +169,44 @@ func (m *Manager) Dispatch(ctx context.Context, request Request) Response {
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closing = true
+	m.notifyLocked()
 	m.mu.Unlock()
 	m.gate <- struct{}{}
 	defer func() { <-m.gate }()
 	if m.backend != nil {
 		m.backend.Close()
+	}
+}
+
+func (m *Manager) notifyLocked() {
+	m.revision++
+	if m.changed != nil {
+		close(m.changed)
+	}
+	m.changed = make(chan struct{})
+}
+
+// A bounded slow subscriber cannot stall state publication or connection work.
+func (m *Manager) Watch(ctx context.Context, emit func(Response) error) error {
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		m.mu.RLock()
+		changed := m.changed
+		closing := m.closing
+		reply := Response{Version: Version, Instance: m.instance, State: m.state, Revision: m.revision}
+		m.mu.RUnlock()
+		if closing {
+			return nil
+		}
+		if err := emit(reply); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		case <-heartbeat.C:
+		}
 	}
 }

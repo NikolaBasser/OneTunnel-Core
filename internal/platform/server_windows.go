@@ -88,6 +88,13 @@ func serveClient(ctx context.Context, conn net.Conn, owner string, manager *cont
 	if err != nil {
 		return
 	}
+	if request.Command == "watch" && control.Validate(request) == "" {
+		_ = manager.Watch(ctx, func(response control.Response) error {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			return control.WriteFrame(conn, response)
+		})
+		return
+	}
 	response := manager.Dispatch(ctx, request)
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	_ = control.WriteFrame(conn, response)

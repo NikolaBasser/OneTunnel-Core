@@ -28,7 +28,7 @@ func downloadWithClient(ctx context.Context, source string, client *http.Client)
 	if e != nil {
 		return ImportResult{}, ErrImport
 	}
-	req.Header.Set("User-Agent", "v2rayN/7.0 OneTunnel/0.1.0")
+	req.Header.Set("User-Agent", "v2rayN/7.0 OneTunnel/0.2.0")
 	req.Header.Set("Accept", "application/json, text/plain;q=0.9")
 	response, e := client.Do(req)
 	if e != nil {
