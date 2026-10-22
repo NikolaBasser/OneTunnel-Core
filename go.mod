@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/amnezia-vpn/amneziawg-windows/v3 v3.1.20260814
 	github.com/rivo/uniseg v0.4.7
 	github.com/sagernet/sing v0.9.7-0.20260929150544-0ad23b637bd4
