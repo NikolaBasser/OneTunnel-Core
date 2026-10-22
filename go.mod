@@ -3,7 +3,7 @@ module onetunnel/core
 go 1.27.0
 
 require (
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.4
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
 	github.com/amnezia-vpn/amneziawg-windows/v3 v3.1.20260814
 	github.com/rivo/uniseg v0.4.7
