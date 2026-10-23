@@ -92,3 +92,12 @@
 !/internal/platform/statistics_runtime_windows_test.go
 !/internal/profiles/desktop_statistics_windows_test.go
 /.codex-go-cache/
+
+!/internal/platform/user_proxy_windows_test.go
+!/internal/platform/user_proxy_notify_windows_test.go
+!/internal/platform/user_proxy_lifecycle_windows_test.go
+!/internal/platform/user_startup_windows_test.go
+!/internal/platform/user_network_windows_test.go
+!/internal/profiles/user_settings_windows_test.go
+
+!/internal/platform/user_automation_transaction_windows_test.go

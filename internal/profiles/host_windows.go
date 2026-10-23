@@ -20,6 +20,7 @@ func readBounded(r io.Reader, limit int) ([]byte, error) {
 }
 func RunHost(ctx context.Context, input io.Reader, output io.Writer, app *Application) error {
 	defer app.clearBackupRestore("")
+	defer app.releaseUserProxy()
 	for {
 		var header [4]byte
 		if _, e := io.ReadFull(input, header[:]); e != nil {

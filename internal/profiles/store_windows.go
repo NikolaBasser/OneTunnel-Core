@@ -16,6 +16,7 @@ import (
 )
 
 type Document struct {
+	UserSettings          *UserPreferences `json:",omitempty"`
 	Version               int
 	Profiles              []Profile
 	FavoriteIDs           []string `json:",omitempty"`
@@ -207,6 +208,7 @@ func (s *Store) load() (Document, error) {
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
+	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
 	s.revision = sha256.Sum256(encrypted)
 	s.loaded = true
 	return d, nil
@@ -250,6 +252,7 @@ func (s *Store) Save(d Document) error {
 		groups[p.Group] = true
 	}
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
+	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
 	for _, schedule := range d.SubscriptionSchedules {
 		if !validSchedule(schedule) {
 			return ErrImport

@@ -143,3 +143,16 @@ Local-proxy totals include connection checks. TUN fast flows include packet byte
 AWG/WG expose transport counters. Missing/error samples are unavailable, not zero.
 Error categories use typed causes; engine errors lacking typed causes remain unknown.
 A matching service is needed for metrics; old services continue without them.
+
+WINDOWS USER SETTINGS
+All automation defaults off. Save the chosen profile/mode and trusted/public
+permissions explicitly. Unknown networks count as public. Startup registers only
+this user's validated OneTunnel.exe and is separate from auto-connect.
+An explicit Disconnect inhibits auto-connect; toggle automation off/on to rearm.
+Three failed starts stop automatic attempts until a category transition or rearm.
+Enable Windows proxy separately after a confirmed LOCAL proxy connection; whole-device mode cannot lease the user proxy. Existing PAC/auto-detect must be resolved
+by the user first. Previous typed proxy values are restored selectively; another
+application's edits are not overwritten. Host exit or local listener loss triggers
+an independent watchdog. This does not alter persistent whole-device kill switch.
+Settings run while the user app is open. Backup restore leaves automation off;
+machine startup registration is excluded. Fake-registry tests are not live proof.

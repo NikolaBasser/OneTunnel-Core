@@ -137,3 +137,19 @@ until two samples exist. These are not provider billing counters. Older services
 without statistics remain supported and show no fabricated totals. Diagnostics
 classify typed failures by bounded stage/category; unsupported authentication
 causes remain unknown rather than guessing from log text.
+
+Windows user settings provide off-by-default auto-connect with separate trusted
+and public network permissions (unknown is public), an explicit profile/mode,
+five-second category debounce and at most three failed starts per category cycle.
+Manual Disconnect inhibits automatic starts until off/on or a new user session.
+The user app must be open. Startup registration is a separate current-user Run
+entry using a validated local installation path; it never enables auto-connect.
+
+System proxy activation is explicit and limited to the authenticated local mixed
+listener. It preserves exact typed user values in a DPAPI journal before writes,
+requires an acknowledged detached watchdog, and restores only unchanged values
+OneTunnel owns. The watchdog handles owner death and three failed loopback checks.
+PAC/auto-detection conflicts block activation. External changes are retained and
+reported; machine WinHTTP is never modified. Closing the user host releases its
+proxy lease without stopping the VPN service. Portable restore disables automatic
+activation and excludes machine startup ownership.

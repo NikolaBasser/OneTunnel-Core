@@ -102,11 +102,19 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			return before, nil
 		}
 		if before.Response.State.Active || before.Response.State.Reconnecting {
+			if err := a.inhibitUserAutoConnect(); err != nil {
+				return nil, err
+			}
 			return a.desktopCall(ctx, "stop", nil, false), nil
 		}
 		r.Command = "connection.start"
 		return a.desktop(ctx, r)
 	case "status", "stop", "probe":
+		if command == "stop" {
+			if err := a.inhibitUserAutoConnect(); err != nil {
+				return nil, err
+			}
+		}
 		return a.desktopCall(ctx, command, nil, false), nil
 	case "recover":
 		for _, name := range []string{"session.json", "kill-switch.json"} {
@@ -168,6 +176,10 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 // for connection, and sent to WPF only on an explicit editor.load request.
 func presentationDocument(document Document) Document {
 	view := document
+	if document.UserSettings != nil {
+		preferences := *document.UserSettings
+		view.UserSettings = &preferences
+	}
 	view.Profiles = make([]Profile, len(document.Profiles))
 	copy(view.Profiles, document.Profiles)
 	view.FavoriteIDs = normalizeFavoriteIDs(document.FavoriteIDs, document.Profiles)

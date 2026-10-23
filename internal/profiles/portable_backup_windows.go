@@ -273,6 +273,9 @@ func decodeBackupDocument(plain []byte) (doc Document, err error) {
 			return doc, errBackupUnavailable
 		}
 	}
+	if _, err := normalizedUserPreferences(doc.UserSettings, doc); err != nil {
+		return doc, errBackupUnavailable
+	}
 	return doc, nil
 }
 
@@ -358,6 +361,10 @@ func eraseDocument(doc *Document) {
 	if doc == nil {
 		return
 	}
+	if doc.UserSettings != nil {
+		*doc.UserSettings = UserPreferences{}
+		doc.UserSettings = nil
+	}
 	for i := range doc.Profiles {
 		profile := &doc.Profiles[i]
 		if profile.Network != nil {
@@ -415,7 +422,15 @@ func (a *Application) applyBackupRestore(token string, restoreSchedules bool) (D
 		a.clearBackupRestore("")
 		return Document{}, errBackupUnavailable
 	}
+	// Replacing preferences must not leave an owned or unreconciled proxy behind.
+	if a.UserAutomation != nil && a.UserAutomation.initializationErr != nil {
+		return Document{}, errBackupUnavailable
+	}
+	if err := a.releaseUserProxy(); err != nil {
+		return Document{}, errBackupUnavailable
+	}
 	candidate := pending.candidate
+	disableRestoredUserAutomation(&candidate)
 	if !restoreSchedules {
 		for group, schedule := range candidate.SubscriptionSchedules {
 			schedule.Enabled = false

@@ -21,6 +21,8 @@ import (
 )
 
 type Request struct {
+	UserSettings     *UserPreferences
+	Executable       string
 	Reliability      *control.ReliabilityOptions
 	Version          int
 	Command          string
@@ -76,6 +78,7 @@ type Environment struct {
 	SingBox        bool
 }
 type Application struct {
+	UserAutomation  *UserAutomation
 	Store           *Store
 	Directory       string
 	Downloader      func(context.Context, string) (ImportResult, error)
@@ -563,6 +566,20 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.desktop(ctx, r)
 	}
 	switch r.Command {
+	case "user.settings.view":
+		return a.userSettingsView()
+	case "user.settings.save":
+		return a.saveUserSettings(r.Token, r.UserSettings)
+	case "user.settings.tick":
+		return a.tickUserSettings(ctx)
+	case "user.proxy.enable":
+		return a.enableUserProxy(ctx, r.Token)
+	case "user.proxy.disable":
+		return a.disableUserProxy(r.Token)
+	case "user.startup.enable":
+		return a.enableUserStartup(r.Executable, r.Token)
+	case "user.startup.disable":
+		return a.disableUserStartup(r.Token)
 	case "group.list":
 		return a.groupList()
 	case "group.rename":
