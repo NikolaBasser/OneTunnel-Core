@@ -12,9 +12,9 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-	"onetunnel/core/internal/buildinfo"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/platform"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 )
 
 type service struct{ owner, directory string }

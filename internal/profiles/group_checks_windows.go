@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/platform"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"time"
 )
 

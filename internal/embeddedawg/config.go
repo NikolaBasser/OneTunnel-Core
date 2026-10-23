@@ -8,7 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"strconv"
 	"strings"
 )

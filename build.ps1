@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source dirty state.' }
 $dirty = $changes.Count -gt 0
 $version = '0.5.0'
 $tags = 'embeddedxray,embeddedsingbox,embeddedtun,embeddedawg,with_quic,with_gvisor,with_naive_outbound,with_purego'
-$flags = '-s -w -X onetunnel/core/internal/buildinfo.Version=' + $version + ' -X onetunnel/core/internal/buildinfo.Revision=' + $revision + ' -X onetunnel/core/internal/buildinfo.Dirty=' + $dirty.ToString().ToLowerInvariant()
+$flags = '-s -w -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Version=' + $version + ' -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Revision=' + $revision + ' -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Dirty=' + $dirty.ToString().ToLowerInvariant()
 $saved = @{}
 foreach ($name in @('GOOS','GOARCH','CGO_ENABLED','GOTOOLCHAIN')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 Push-Location $source
@@ -44,6 +44,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Go profile host build failed.' }
     $buildInfo = @(& $go version -m (Join-Path $service 'OneTunnel.Service.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read Go build metadata.' }
+    $buildInfo[0] = $buildInfo[0].Replace((Join-Path $service 'OneTunnel.Service.exe'), 'OneTunnel.Service.exe')
     $buildInfo | Set-Content (Join-Path $service 'go-build-info.txt') -Encoding UTF8
     function Module-Directory([string]$Name) {
         $directory = & $go list -m -mod=readonly -f '{{.Dir}}' $Name
@@ -67,7 +68,7 @@ try {
     $notices = @()
     foreach ($entry in @($modules | Where-Object { $_ -match '\|' } | Sort-Object -Unique)) {
         $parts = $entry -split '\|',3
-        if ($parts[0] -eq 'onetunnel/core') { continue }
+        if ($parts[0] -eq 'github.com/NikolaBasser/OneTunnel-Core') { continue }
         $folder = ($parts[0] + '@' + $parts[1]) -replace '[^A-Za-z0-9._@-]','_'
         $moduleTarget = Join-Path $service ('third-party/' + $folder)
         New-Item -ItemType Directory -Path $moduleTarget -Force | Out-Null

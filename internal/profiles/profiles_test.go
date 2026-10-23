@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"os"
 	"strings"
 	"testing"

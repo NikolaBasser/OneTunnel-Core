@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
-	"onetunnel/core/internal/embeddedawg"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/embeddedawg"
 )
 
 func embeddedAWGEnabled() bool { return true }

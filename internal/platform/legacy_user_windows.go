@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"golang.org/x/sys/windows"
-	"onetunnel/core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"path/filepath"
 )
 

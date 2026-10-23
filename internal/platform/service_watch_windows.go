@@ -2,7 +2,7 @@ package platform
 
 import (
 	"context"
-	"onetunnel/core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"time"
 )
 

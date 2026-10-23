@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 func TestBundleBoundaryPreservesProfileOptions(t *testing.T) {

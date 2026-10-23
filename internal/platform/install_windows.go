@@ -19,8 +19,8 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 var interactiveSID = regexp.MustCompile(`^S-1-5-21-\d+-\d+-\d+-\d+$`)

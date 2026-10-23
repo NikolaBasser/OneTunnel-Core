@@ -1,4 +1,4 @@
-OneTunnel core: independent Windows amd64 bundle
+OneTunnel-Core: independent Windows amd64 bundle
 
 Requirements: Git checkout, PowerShell 5.1 or later, Go 1.27.3, and module dependencies.
 Prepare the toolchain and module cache explicitly. This build does not download a
@@ -20,3 +20,27 @@ do not exist yet. Portable-package checks do not imply full runtime support.
 Consume only trusted bundle inputs. Manifest hashes detect corruption and file
 substitution relative to that manifest; they do not authenticate its publisher.
 No binaries are executed as part of build-boundary validation.
+
+REPOSITORY BOUNDARY
+This repository contains Go source only. The Windows application is maintained
+separately and selects a clean core revision through its core-reference.json.
+Commit source changes before building a bundle intended for that pinned consumer.
+The generated manifest must report the selected source revision and Dirty=false.
+
+CHECKS
+go test -mod=readonly ./internal/control ./internal/protocol ./internal/profiles
+For Windows production-tag tests and vet, use the exact tags in .github/workflows/validate.yml.
+Core CI does not require .NET, UI assets or a Windows application checkout.
+No release or artifact publication is performed by this workflow.
+
+PORTABLE FOUNDATION
+The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
+go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles
+The SDK delegates to existing implementations and requires an explicit runtime adapter.
+Foundation library compilation for Linux/Android/iOS is not application linking,
+device validation, gomobile binding, route/DNS integration or a working VPN package.
+
+LEGAL NOTICES
+go.mod/go.sum pin dependencies; generated bundles include notices collected from
+the actual linked modules. Static upstream notices are retained in licenses/.
+See THIRD-PARTY-NOTICES.txt and preserve applicable redistribution obligations.

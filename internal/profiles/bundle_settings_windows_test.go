@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 func TestBundleBoundaryPreservesEncryptedSettings(t *testing.T) {

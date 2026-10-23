@@ -9,7 +9,7 @@ import (
 
 	winio "github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
-	"onetunnel/core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 )
 
 func PipeSecurity(owner string) (string, error) {
