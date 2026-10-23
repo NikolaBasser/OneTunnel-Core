@@ -213,7 +213,14 @@ func prepareXray(ctx context.Context, c jsonObject) error {
 	return nil
 }
 func discoverClock(ctx context.Context) (bool, string, error) {
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 4 * time.Second}
+	transport := &http.Transport{Proxy: nil}
+	if resolver, ok := ctx.Value(bootstrapKey{}).(*bootstrapResolver); ok && resolver.forceSecure {
+		dialer := &net.Dialer{}
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return resolveAndDialClockEndpoint(ctx, network, address, resolveEndpoint, dialer.DialContext)
+		}
+	}
+	client := &http.Client{Transport: transport, Timeout: 4 * time.Second}
 	defer client.CloseIdleConnections()
 	before := time.Now()
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.cloudflare.com/cdn-cgi/trace?onetunnel="+time.Now().Format("150405.000000000"), nil)
@@ -231,6 +238,19 @@ func discoverClock(ctx context.Context) (bool, string, error) {
 	server, e := resolveEndpoint(ctx, "time.cloudflare.com")
 	return true, server, e
 }
+
+func resolveAndDialClockEndpoint(ctx context.Context, network, address string, resolve func(context.Context, string) (string, error), dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ip, err := resolve(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return dial(ctx, network, net.JoinHostPort(ip, port))
+}
+
 func httpsCheck(ctx context.Context, proxyPort int) error {
 	transport := &http.Transport{Proxy: nil}
 	if proxyPort > 0 {

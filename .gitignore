@@ -83,3 +83,4 @@
 !/internal/platform/network_policy_check_windows_test.go
 !/internal/embeddedsingbox/network_validation_test.go
 !/internal/embeddedsingbox/network_matrix_test.go
+!/internal/platform/clock_bootstrap_network_policy_windows_test.go
