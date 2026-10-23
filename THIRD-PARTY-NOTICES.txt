@@ -1,0 +1,26 @@
+Third-party components of the OneTunnel Go core
+
+Exact module revisions and content checksums are recorded in go.mod and go.sum.
+The standalone builder collects dependency licenses/notices for both Go executables
+and records their module versions in service/embedded-dependencies.json.
+Preserve that inventory and the corresponding source/license obligations when distributing.
+
+Embedded transport libraries:
+- github.com/xtls/xray-core: source revision pinned in go.mod; MPL-2.0 notices.
+- github.com/sagernet/sing-box v1.14.3: GPL-3.0-or-later notices.
+- github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828 and
+  github.com/amnezia-vpn/amneziawg-windows/v3 v3.1.20260814: upstream module/per-file notices.
+- github.com/sagernet/cronet-go and the pinned windows_amd64 library module:
+  Chromium/NaiveProxy upstream notices, including the generated LICENSE.cronet.txt.
+- Wintun: upstream distribution notice retained in licenses/LICENSE.wintun.txt.
+
+Other linked components include Go 1.27.3 (BSD-style license),
+github.com/Microsoft/go-winio v0.6.4 (MIT), github.com/rivo/uniseg v0.4.7 (MIT),
+and golang.org/x/sys, x/net and x/text (BSD-style licenses).
+The generated linked-module inventory is authoritative for the exact build.
+
+Upstream source locations are the module paths declared in go.mod. Module cache
+source matching go.sum and generated build metadata can be retrieved using Go tools.
+Static upstream notices are copied unchanged from the original project into licenses/.
+No affiliation with the upstream projects is implied. UI graphics belong to the separate
+Windows application repository and are not included in the core source or bundle.

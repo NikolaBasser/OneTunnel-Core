@@ -1,0 +1,59 @@
+name: Validate Go core
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    name: Portable packages (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: go.sum
+      - run: go test -mod=readonly -count=1 ./internal/control ./internal/protocol ./internal/profiles
+      - run: go vet -mod=readonly ./internal/control ./internal/protocol ./internal/profiles
+  windows:
+    name: Windows x64 full embedded core
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: go.sum
+      - name: Test all packages with production engine tags
+        run: >-
+          go test -mod=readonly -p 1 -count=1
+          -tags embeddedxray,embeddedsingbox,embeddedtun,embeddedawg,with_quic,with_gvisor,with_naive_outbound,with_purego
+          ./...
+      - name: Vet all packages with production engine tags
+        run: >-
+          go vet -mod=readonly
+          -tags embeddedxray,embeddedsingbox,embeddedtun,embeddedawg,with_quic,with_gvisor,with_naive_outbound,with_purego
+          ./...
+      - name: Build the complete standalone core bundle
+        run: ./build.ps1 -GoExecutable (Get-Command go).Source -Output "$PWD/artifacts/core-bundle"
+      - name: Verify clean bundle identity
+        run: |
+          $manifest = Get-Content artifacts/core-bundle/core-bundle.json -Raw | ConvertFrom-Json
+          if ($manifest.SourceRevision -cne $env:GITHUB_SHA -or $manifest.Dirty -ne $false) { throw 'Core bundle identity mismatch.' }
+          'Windows ARM64/full Linux application packages remain unsupported; Linux jobs test portable packages only.' | Add-Content $env:GITHUB_STEP_SUMMARY
