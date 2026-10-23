@@ -46,6 +46,7 @@ type Request struct {
 	Sort           string
 	Filter         string
 	TransportInput *TransportInput
+	NetworkInput   *NetworkInput
 	Observation    *platform.ServiceObservation
 	Context        *DesktopContext
 	Retained       *DesktopReply
@@ -438,12 +439,32 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 		return Applied{}, e
 	}
 	if r.ID == "" {
+		if r.NetworkInput != nil {
+			p.Network, e = r.NetworkInput.Parse()
+			if e != nil {
+				return Applied{}, e
+			}
+			if e = Validate(p); e != nil {
+				return Applied{}, e
+			}
+		}
 		d.Profiles = append(d.Profiles, p)
 	} else {
 		found := false
 		for i, old := range d.Profiles {
 			if old.ID == r.ID {
 				p.ID = r.ID
+				if r.NetworkInput != nil {
+					p.Network, e = r.NetworkInput.Parse()
+					if e != nil {
+						return Applied{}, e
+					}
+				} else {
+					p.Network = protocol.CloneNetworkOptions(old.Network)
+				}
+				if e = Validate(p); e != nil {
+					return Applied{}, e
+				}
 				d.Profiles[i] = p
 				found = true
 				break
@@ -660,6 +681,10 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return nil, nil
 	case "group.results.fastest":
 		return a.groupResultsFastest(r.Token)
+	case "network.preferences.view":
+		return a.networkPreferencesView(r.ID)
+	case "network.preferences.save":
+		return a.saveNetworkPreferences(r)
 	case "editor.save":
 		return a.SaveEditor(ctx, r)
 	case "store.load":

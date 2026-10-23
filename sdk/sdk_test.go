@@ -42,6 +42,12 @@ func TestSubscriptionMergeKeepsOptionsAndRejectsInvalidInput(t *testing.T) {
 	p.Group = "synthetic group"
 	p.Transport = &sdk.TransportOptions{Fragment: true, FragmentLength: "100-200", FragmentInterval: "10-20", NoiseLength: "50-150", NoiseDelay: "10-20", MuxConcurrency: 8}
 	p.Reliability = &sdk.ReliabilityOptions{AutoReconnect: true, UseFallbacks: true}
+	p.Network = &sdk.NetworkOptions{Rules: []sdk.NetworkRule{{Kind: "domain", Value: "example.com", Action: "proxy"}}}
+	if _, err := sdk.CompileLocal(p, 18734, 18735); err == nil {
+		t.Fatal("local SDK silently ignored full-device network preferences")
+	}
+	network := p.Network
+	p.Network = nil
 	plan, err := sdk.CompileLocal(p, 18734, 18735)
 	if err != nil || !strings.Contains(plan.Xray, "fragment") {
 		t.Fatal("transport options", err)
@@ -50,8 +56,9 @@ func TestSubscriptionMergeKeepsOptionsAndRejectsInvalidInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	p.Network = network
 	merged, err := sdk.Merge([]sdk.Profile{p}, []sdk.Profile{fresh}, p.Group)
-	if err != nil || len(merged.Profiles) != 1 || !reflect.DeepEqual(merged.Profiles[0].Transport, p.Transport) || !reflect.DeepEqual(merged.Profiles[0].Reliability, p.Reliability) || merged.Profiles[0].ID != p.ID {
+	if err != nil || len(merged.Profiles) != 1 || !reflect.DeepEqual(merged.Profiles[0].Transport, p.Transport) || !reflect.DeepEqual(merged.Profiles[0].Reliability, p.Reliability) || !reflect.DeepEqual(merged.Profiles[0].Network, p.Network) || merged.Profiles[0].ID != p.ID {
 		t.Fatal("merge changed profile options", err)
 	}
 	if _, err := sdk.Parse("invalid", "not a profile", nil); err == nil {

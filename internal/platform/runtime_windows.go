@@ -20,11 +20,11 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
-	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 // Session is compatible with 0.6–0.8, including .NET UTC ticks. Paths read
@@ -489,7 +489,13 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if r.bootstrapIPs == nil {
 		r.bootstrapIPs = map[string]string{}
 	}
-	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: r.bootstrapIPs, secure: r.retrying && r.lock.needed(), attempt: r.retry.attempt})
+	secureBootstrap := r.retrying && r.lock.needed()
+	forceSecureBootstrap := false
+	if request.Profile != nil && !protocol.NetworkOptionsEmpty(request.Profile.Network) {
+		secureBootstrap = true
+		forceSecureBootstrap = true
+	}
+	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: r.bootstrapIPs, secure: secureBootstrap, forceSecure: forceSecureBootstrap, attempt: r.retry.attempt})
 	if request.Profile == nil {
 		return protocol.ErrConfiguration
 	}
@@ -520,7 +526,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if err != nil {
 		return err
 	}
-	plan, err := protocol.CompileWithOptions(p.Source, p.Protocol, request.FullDevice, local, bridge, xrayIdentity, p.Transport)
+	plan, err := protocol.CompileWithNetwork(p.Source, p.Protocol, request.FullDevice, local, bridge, xrayIdentity, p.Transport, p.Network)
 	if err != nil {
 		return err
 	}

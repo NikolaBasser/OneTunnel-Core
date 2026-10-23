@@ -191,7 +191,9 @@ func Parse(name, source string, requested *int) (Profile, error) {
 }
 
 func Validate(p Profile) error {
-	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &p}); e != "" {
+	check := p
+	check.Network = nil // Stored policy is validated independently of runtime mode.
+	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &check, FullDevice: true}); e != "" {
 		return ErrImport
 	}
 	if !ValidName(p.Name) || !ValidName(p.Group) {
@@ -202,6 +204,9 @@ func Validate(p Profile) error {
 	}
 	if e := protocol.ValidateOptions(p.Source, p.Protocol, p.Transport); e != nil {
 		return errors.New("Несовместимые параметры фрагментации, шумов или MUX. Проверь транспорт, Vision и допустимые диапазоны.")
+	}
+	if e := protocol.ValidateNetworkOptions(p.Network, p.Protocol, true); e != nil {
+		return ErrImport
 	}
 	return nil
 }
@@ -564,6 +569,7 @@ func Merge(existing, incoming []Profile, group string) (MergeResult, error) {
 			fresh.ID = match.ID
 			fresh.Transport = match.Transport
 			fresh.Reliability = match.Reliability
+			fresh.Network = protocol.CloneNetworkOptions(match.Network)
 			if fresh.Source != match.Source || fresh.Name != match.Name {
 				r.Updated++
 			}

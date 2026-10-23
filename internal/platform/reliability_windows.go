@@ -132,8 +132,16 @@ func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string
 	}
 	started := time.Now()
 	result := control.ProfileCheck{NetworkTest: p.Protocol >= 2}
-	if p.Protocol < 2 {
-		_, err := protocol.CompileWithOptions(p.Source, p.Protocol, false, 18001, 18002, "unused", p.Transport)
+	if !protocol.NetworkOptionsEmpty(p.Network) {
+		plan, err := protocol.CompileWithNetwork(p.Source, p.Protocol, true, 18001, 18002, "unused", p.Transport, p.Network)
+		result.Success = err == nil && plan.Proxy != ""
+		result.NetworkTest = false
+		result.Message = "Конфигурация DNS и маршрутизации проверена; сетевой тест не выполнялся"
+		if !result.Success {
+			result.Message = "Некорректная конфигурация DNS или маршрутизации"
+		}
+	} else if p.Protocol < 2 {
+		_, err := protocol.CompileWithNetwork(p.Source, p.Protocol, false, 18001, 18002, "unused", p.Transport, p.Network)
 		result.Success = err == nil
 		result.Message = "Конфигурация проверена; сетевой тест WG/AWG выполняется при подключении"
 		if err != nil {

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -115,4 +116,115 @@ func CompileWithOptions(source string, kind int, tun bool, localPort, bridgePort
 	b, err := json.Marshal(x)
 	p.Xray = string(b)
 	return p, err
+}
+
+// CompileWithNetwork adds profile-local DNS and routing only to full-device
+// sing-box plans. Empty preferences take the legacy compiler path unchanged.
+func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort int, xrayPath string, transport *TransportOptions, network *NetworkOptions) (Plan, error) {
+	if NetworkOptionsEmpty(network) {
+		return CompileWithOptions(source, kind, tun, localPort, bridgePort, xrayPath, transport)
+	}
+	if !tun || kind < 2 || kind > MaxKind {
+		return Plan{}, ErrConfiguration
+	}
+	normalized, err := NormalizeNetworkOptions(network)
+	if err != nil {
+		return Plan{}, err
+	}
+	p, err := CompileWithOptions(source, kind, tun, localPort, bridgePort, xrayPath, transport)
+	if err != nil {
+		return Plan{}, err
+	}
+	config, err := decodeObject(p.Proxy)
+	if err != nil {
+		return Plan{}, ErrConfiguration
+	}
+	if normalized.DNS != nil {
+		dns := normalized.DNS
+		server := object{"type": dns.Transport, "tag": "remote-dns", "server": dns.ServerIP, "server_port": dns.Port, "detour": "proxy", "tls": object{"enabled": true, "server_name": dns.ServerName}}
+		if dns.Transport == "https" {
+			server["path"] = dns.Path
+		}
+		config["dns"] = object{"servers": []any{server}, "final": "remote-dns"}
+	}
+	route := obj(obj(config["route"]))
+	rules := arr(route["rules"])
+	// Windows process paths are case-insensitive; the engine's exact path
+	// matcher is case-sensitive, so express validated paths as anchored regexes.
+	if len(rules) > 0 {
+		if paths := arr(obj(rules[0])["process_path"]); len(paths) > 0 {
+			entry := obj(rules[0])
+			patterns := make([]any, len(paths))
+			for i, path := range paths {
+				patterns[i] = windowsProcessRegex(s(path))
+			}
+			delete(entry, "process_path")
+			entry["process_path_regex"] = patterns
+		}
+	}
+	for _, rule := range normalized.Rules {
+		var matcher string
+		switch rule.Kind {
+		case "domain":
+			matcher = "domain"
+		case "domain-suffix":
+			matcher = "domain_suffix"
+		case "cidr":
+			matcher = "ip_cidr"
+		case "process":
+			matcher = "process_path_regex"
+		}
+		matchValue := rule.Value
+		if rule.Kind == "process" {
+			matchValue = windowsProcessRegex(rule.Value)
+		}
+		value := []any{matchValue}
+		entry := object{matcher: value}
+		if rule.Action == "reject" {
+			entry["action"] = "reject"
+		} else {
+			entry["action"], entry["outbound"] = "route", rule.Action
+		}
+		rules = append(rules, entry)
+	}
+	if len(normalized.Rules) > 0 {
+		route["rules"] = rules
+	}
+	config["route"] = route
+	if hasDirectRule(normalized.Rules) {
+		outbounds := arr(config["outbounds"])
+		outbounds = append(outbounds, object{"type": "direct", "tag": "direct"})
+		config["outbounds"] = outbounds
+	}
+	if hasDomainRule(normalized.Rules) {
+		dns := obj(config["dns"])
+		dns["reverse_mapping"] = true
+		config["dns"] = dns
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		return Plan{}, ErrConfiguration
+	}
+	p.Proxy = string(data)
+	return p, nil
+}
+
+func windowsProcessRegex(path string) string { return `(?i)^` + regexp.QuoteMeta(path) + `$` }
+
+func hasDirectRule(rules []NetworkRule) bool {
+	for _, rule := range rules {
+		if rule.Action == "direct" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDomainRule(rules []NetworkRule) bool {
+	for _, rule := range rules {
+		if rule.Kind == "domain" || rule.Kind == "domain-suffix" {
+			return true
+		}
+	}
+	return false
 }

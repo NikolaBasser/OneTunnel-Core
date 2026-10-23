@@ -76,3 +76,10 @@
 !/sdk/sdk_test.go
 !/internal/profiles/group_result_tools_windows_test.go
 !/internal/profiles/profile_organization_windows_test.go
+!/internal/protocol/network_options_test.go
+!/internal/control/network_wire_test.go
+!/internal/profiles/network_preferences_windows_test.go
+!/internal/platform/bootstrap_network_policy_windows_test.go
+!/internal/platform/network_policy_check_windows_test.go
+!/internal/embeddedsingbox/network_validation_test.go
+!/internal/embeddedsingbox/network_matrix_test.go

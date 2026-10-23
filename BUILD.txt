@@ -98,3 +98,17 @@ groups cannot be destinations. Reload the tools after a changed storage snapshot
 Moving keeps the ID, favorite and stored position. Copies append to stored order.
 These actions preserve unfinished editor drafts and do not connect a tunnel.
 No installed-service update is required for these user-host operations.
+
+DNS AND SPLIT ROUTING (PROXY WHOLE-DEVICE MODE)
+Open the selected profile DNS/routing section, choose default, custom DoH or DoT,
+and enter a literal resolver IP plus its verified TLS server name. Blank port
+uses 443 for DoH or 853 for DoT; blank DoH path uses /dns-query; DoT path is empty.
+Enter ordered rules as: kind | action | value. Kinds: domain, domain-suffix, cidr,
+process. Actions: proxy, direct, reject. First matching user rule wins after
+infrastructure rules; unmatched traffic stays proxied. Save applies on a future
+connection, not to a running session. Direct rules explicitly allow direct egress.
+AWG/WG and local proxy mode cannot use these new preferences. Install the matching
+bundled service explicitly before using them; preview startup never updates it.
+Domain matching depends on observed DNS/SNI and process matching on Windows process
+attribution; private application DoH/ECH can reduce domain visibility. A config
+validation test does not prove live routing correctness or absence of DNS leaks.

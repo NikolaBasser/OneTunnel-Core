@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"golang.org/x/sys/windows"
 	"io"
 	"os"
@@ -187,6 +188,11 @@ func (s *Store) load() (Document, error) {
 		if d.Profiles[i].Group == "" {
 			d.Profiles[i].Group = "Без группы"
 		}
+		network, normalizeErr := protocol.NormalizeNetworkOptions(d.Profiles[i].Network)
+		if normalizeErr != nil || protocol.ValidateNetworkOptions(network, d.Profiles[i].Protocol, true) != nil {
+			return d, errors.New("Хранилище содержит неподдерживаемые сетевые параметры; исходный файл сохранён.")
+		}
+		d.Profiles[i].Network = network
 	}
 	for group, url := range d.SubscriptionSources {
 		if !SecureURL(url) {
@@ -225,7 +231,13 @@ func (s *Store) Save(d Document) error {
 	}
 	seen := map[string]bool{}
 	groups := map[string]bool{}
-	for _, p := range d.Profiles {
+	for i := range d.Profiles {
+		network, normalizeErr := protocol.NormalizeNetworkOptions(d.Profiles[i].Network)
+		if normalizeErr != nil || protocol.ValidateNetworkOptions(network, d.Profiles[i].Protocol, true) != nil {
+			return errors.New("Хранилище содержит неподдерживаемые сетевые параметры; исходный файл сохранён.")
+		}
+		d.Profiles[i].Network = network
+		p := d.Profiles[i]
 		if e := Validate(p); e != nil {
 			return e
 		}

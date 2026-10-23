@@ -66,6 +66,7 @@ func Start(data []byte) (*Engine, error) {
 	transport.RegisterUDP(dnsRegistry)
 	transport.RegisterTCP(dnsRegistry)
 	transport.RegisterHTTPS(dnsRegistry)
+	transport.RegisterTLS(dnsRegistry)
 	local.RegisterTransport(dnsRegistry)
 	ctx, cancel := context.WithCancel(box.Context(context.Background(), in, out, endpoint.NewRegistry(), dnsRegistry, boxservice.NewRegistry(), certificate.NewRegistry()))
 	var options option.Options
@@ -135,6 +136,7 @@ func Validate(data []byte) error {
 	shadowsocks.RegisterOutbound(out)
 	dnsRegistry := dns.NewTransportRegistry()
 	transport.RegisterHTTPS(dnsRegistry)
+	transport.RegisterTLS(dnsRegistry)
 	transport.RegisterUDP(dnsRegistry)
 	local.RegisterTransport(dnsRegistry)
 	ctx, cancel := context.WithCancel(box.Context(context.Background(), in, out, endpoint.NewRegistry(), dnsRegistry, boxservice.NewRegistry(), certificate.NewRegistry()))

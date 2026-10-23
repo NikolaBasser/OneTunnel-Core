@@ -102,3 +102,13 @@ Copies preserve protocol and transport/reliability options, receive a new ID and
 start without a favorite mark. Subscription profiles can be copied to manual
 groups; subscription members and managed destination groups cannot be moved.
 Both actions require the reviewed storage snapshot and never start a connection.
+
+Proxy profiles can store encrypted DNS and explicit split routing preferences for
+whole-device mode. Ordered domain, domain-suffix, IP/subnet and executable-path
+rules choose proxy, direct or reject; unmatched traffic stays proxied. Direct rules
+are intentional exceptions to VPN routing, not an automatic LAN bypass. Custom
+DoH/DoT uses a literal resolver IP, verified TLS identity and proxy detour. Upstream
+server-name bootstrap uses the fixed encrypted infrastructure path, separately
+from the custom tunneled resolver. Native AWG/WG retain imported DNS/AllowedIPs;
+new policies and local proxy mode are incompatible and rejected. A matching new
+service build is required; an old strict service refuses unsupported fields.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"github.com/rivo/uniseg"
 )
 
@@ -204,5 +205,6 @@ func cloneOrganizationProfile(profile Profile) Profile {
 		reliability := *profile.Reliability
 		copy.Reliability = &reliability
 	}
+	copy.Network = protocol.CloneNetworkOptions(profile.Network)
 	return copy
 }

@@ -13,6 +13,9 @@ import (
 
 type Profile = control.Profile
 type TransportOptions = protocol.TransportOptions
+type NetworkOptions = protocol.NetworkOptions
+type DNSOptions = protocol.DNSOptions
+type NetworkRule = protocol.NetworkRule
 type ReliabilityOptions = control.ReliabilityOptions
 type Request = control.Request
 type Response = control.Response
@@ -69,7 +72,7 @@ func CompileLocal(profile Profile, localPort, bridgePort int) (Plan, error) {
 	if err := profiles.Validate(profile); err != nil {
 		return Plan{}, err
 	}
-	return protocol.CompileWithOptions(profile.Source, profile.Protocol, false, localPort, bridgePort, "", profile.Transport)
+	return protocol.CompileWithNetwork(profile.Source, profile.Protocol, false, localPort, bridgePort, "", profile.Transport, profile.Network)
 }
 
 // NewController requires an explicit host implementation. No unsupported target

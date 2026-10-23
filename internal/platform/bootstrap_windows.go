@@ -18,9 +18,12 @@ import (
 
 type bootstrapKey struct{}
 type bootstrapResolver struct {
-	cache   map[string]string
-	secure  bool
-	attempt int
+	cache        map[string]string
+	secure       bool
+	forceSecure  bool
+	attempt      int
+	secureLookup func(context.Context, string) (string, error)
+	systemLookup func(context.Context, string) ([]net.IPAddr, error)
 }
 
 func (b *bootstrapResolver) lookup(ctx context.Context, host string) (string, error) {
@@ -28,20 +31,29 @@ func (b *bootstrapResolver) lookup(ctx context.Context, host string) (string, er
 	if b.secure {
 		ip := net.ParseIP(cached)
 		// Preserve internal names locally; never send them to a public resolver.
-		if cached != "" && (b.attempt <= 1 || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || !strings.Contains(host, ".") || strings.HasSuffix(host, ".local")) {
+		localEndpoint := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || !strings.Contains(host, ".") || strings.HasSuffix(host, ".local")
+		if cached != "" && (localEndpoint || !b.forceSecure && b.attempt <= 1) {
 			return cached, nil
 		}
-		resolved, err := secureBootstrapLookup(ctx, host)
+		lookup := b.secureLookup
+		if lookup == nil {
+			lookup = secureBootstrapLookup
+		}
+		resolved, err := lookup(ctx, host)
 		if err == nil {
 			b.cache[host] = resolved
 			return resolved, nil
 		}
-		if cached != "" {
+		if cached != "" && !b.forceSecure {
 			return cached, nil
 		}
 		return "", err
 	}
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	lookup := b.systemLookup
+	if lookup == nil {
+		lookup = net.DefaultResolver.LookupIPAddr
+	}
+	ips, err := lookup(ctx, host)
 	if err != nil {
 		return "", err
 	}
