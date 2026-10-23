@@ -3,6 +3,8 @@ package platform
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +20,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 	"onetunnel/core/internal/control"
+	"onetunnel/core/internal/protocol"
 )
 
 var interactiveSID = regexp.MustCompile(`^S-1-5-21-\d+-\d+-\d+-\d+$`)
@@ -161,6 +164,7 @@ func InstallPublicService(ctx context.Context, directory, owner string) (result 
 		Runtime                                                 string
 		ApiVersion                                              int
 		EmbeddedAWG, EmbeddedXray, EmbeddedSingBox, EmbeddedTun bool
+		EmbeddedNaive                                           bool
 	}
 	if json.Unmarshal(bytes.TrimPrefix(metadata, []byte{0xef, 0xbb, 0xbf}), &info) != nil || info.Runtime != "go" || info.ApiVersion != control.Version || !info.EmbeddedAWG || !info.EmbeddedXray || !info.EmbeddedSingBox || !info.EmbeddedTun {
 		return errors.New("complete embedded service package required")
@@ -182,6 +186,16 @@ func InstallPublicService(ctx context.Context, directory, owner string) (result 
 	root := filepath.Join(programData, "OneTunnel", "Service", owner)
 	if !installIdle(root) {
 		return errors.New("Отключи подключение или выполни восстановление перед обновлением службы.")
+	}
+	if info.EmbeddedNaive {
+		data, err := os.ReadFile(filepath.Join(source, "libcronet.dll"))
+		if err != nil {
+			return errors.New("NaiveProxy component missing from package")
+		}
+		digest := sha256.Sum256(data)
+		if hex.EncodeToString(digest[:]) != protocol.NaiveLibrarySHA256 {
+			return errors.New("NaiveProxy component checksum mismatch")
+		}
 	}
 	previousOwner, err := os.ReadFile(filepath.Join(destination, "service-owner.json"))
 	if err == nil {
@@ -305,7 +319,7 @@ func InstallPublicService(ctx context.Context, directory, owner string) (result 
 		}
 		name := entry.Name()
 		ext := strings.ToLower(filepath.Ext(name))
-		if ext == ".dll" || ext == ".pdb" || strings.HasPrefix(name, "OneTunnel.Adapter") || strings.HasSuffix(name, ".deps.json") || strings.HasSuffix(name, ".runtimeconfig.json") {
+		if (ext == ".dll" && !(info.EmbeddedNaive && name == "libcronet.dll")) || ext == ".pdb" || strings.HasPrefix(name, "OneTunnel.Adapter") || strings.HasSuffix(name, ".deps.json") || strings.HasSuffix(name, ".runtimeconfig.json") {
 			if err = os.Remove(filepath.Join(destination, name)); err != nil {
 				return err
 			}

@@ -69,6 +69,9 @@ func ImportedName(s string) string {
 	return b.String()
 }
 func IsURL(s string) bool {
+	if protocol.LinkKind(s) == protocol.HTTP {
+		return false
+	}
 	u, e := url.Parse(strings.TrimSpace(s))
 	return e == nil && u.Host != "" && (u.Scheme == "https" || u.Scheme == "http")
 }
@@ -115,16 +118,27 @@ func Parse(name, source string, requested *int) (Profile, error) {
 		if json.Unmarshal([]byte(source), &out) != nil {
 			return Profile{}, ErrImport
 		}
-		switch out["protocol"] {
-		case "vless":
-			kind = 2
-		case "hysteria":
-			kind = 4
-		case "shadowsocks":
-			kind = 5
-		default:
-			return Profile{}, ErrImport
+		if typ, ok := out["type"].(string); ok {
+			kinds := map[string]int{"http": protocol.HTTP, "trojan": protocol.Trojan, "tuic": protocol.TUIC, "anytls": protocol.AnyTLS, "naive": protocol.Naive}
+			var found bool
+			kind, found = kinds[typ]
+			if !found {
+				return Profile{}, ErrImport
+			}
+		} else {
+			switch out["protocol"] {
+			case "vless":
+				kind = 2
+			case "hysteria":
+				kind = 4
+			case "shadowsocks":
+				kind = 5
+			default:
+				return Profile{}, ErrImport
+			}
 		}
+	case protocol.LinkKind(source) >= protocol.HTTP:
+		kind = protocol.LinkKind(source)
 	case strings.HasPrefix(lower, "vless://"):
 		kind = 2
 	case strings.HasPrefix(lower, "ss://"):
@@ -158,7 +172,7 @@ func Parse(name, source string, requested *int) (Profile, error) {
 			}
 		}
 		if strings.TrimSpace(name) == "" {
-			names := []string{"AmneziaWG", "WireGuard", "VLESS", "SOCKS5", "Hysteria2", "Shadowsocks"}
+			names := protocol.Names
 			name = names[kind] + " · новое подключение"
 		}
 	}
@@ -273,7 +287,7 @@ func ParseSubscription(payload string) (ImportResult, error) {
 				continue
 			}
 			proto, _ := o["protocol"].(string)
-			if proto == "vless" || proto == "hysteria" || proto == "shadowsocks" {
+			if proto == "vless" || proto == "hysteria" || proto == "shadowsocks" || supportedNativeType(o) {
 				b, _ := json.Marshal(o)
 				if e := add("", string(b)); e != nil {
 					return r, e
@@ -289,6 +303,10 @@ func ParseSubscription(payload string) (ImportResult, error) {
 			count := 0
 			for _, v := range outs {
 				out, _ := v.(map[string]any)
+				if supportedNativeType(out) {
+					count++
+					continue
+				}
 				if out["protocol"] == "vless" || out["protocol"] == "hysteria" || out["protocol"] == "shadowsocks" {
 					count++
 				}
@@ -296,6 +314,13 @@ func ParseSubscription(payload string) (ImportResult, error) {
 			for _, v := range outs {
 				out, ok := v.(map[string]any)
 				if !ok {
+					continue
+				}
+				if supportedNativeType(out) {
+					b, _ := json.Marshal(out)
+					if e := add(nativeTag(out), string(b)); e != nil {
+						return r, e
+					}
 					continue
 				}
 				switch out["protocol"] {
@@ -325,7 +350,7 @@ func ParseSubscription(payload string) (ImportResult, error) {
 				continue
 			}
 			low := strings.ToLower(line)
-			if strings.HasPrefix(low, "vless://") || strings.HasPrefix(low, "ss://") || strings.HasPrefix(low, "socks5://") || strings.HasPrefix(low, "hy2://") || strings.HasPrefix(low, "hysteria2://") {
+			if protocol.LinkKind(low) >= 2 {
 				if e := add("", line); e != nil {
 					return r, e
 				}
@@ -551,3 +576,9 @@ func Merge(existing, incoming []Profile, group string) (MergeResult, error) {
 	r.Removed = len(target) - len(used)
 	return r, nil
 }
+
+func supportedNativeType(out map[string]any) bool {
+	typ, _ := out["type"].(string)
+	return typ == "http" || typ == "trojan" || typ == "tuic" || typ == "anytls" || typ == "naive"
+}
+func nativeTag(out map[string]any) string { tag, _ := out["tag"].(string); return tag }

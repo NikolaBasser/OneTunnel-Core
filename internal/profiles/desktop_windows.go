@@ -192,6 +192,9 @@ func profileView(kind int) ProfileView {
 	if kind == 0 || kind == 1 {
 		return ProfileView{"По конфигурации · маршруты из AllowedIPs", "Маршрутизация из конфигурации", "Полные маршруты создаются временно; сохранённый профиль не меняется.", "Используются AllowedIPs из профиля. Частичные маршруты не защищают весь трафик устройства.", "Полные маршруты применяются временно. Kill switch сохраняет блокировку при обрыве. Отключение возвращает обычную сеть."}
 	}
+	if kind == protocol.HTTP || kind == protocol.Naive {
+		return ProfileView{"Локальный прокси · TCP", "Режим подключения", "HTTP CONNECT и NaiveProxy передают TCP. UDP не отправляется напрямую; DNS в режиме всего устройства идёт через защищённый HTTPS-транспорт.", "HTTP(S): http://user:password@host:port или https://user:password@host:port. NaiveProxy: naive+https://user:password@host:port. Прокси без авторизации: явно укажи порт. Для подписки используй полный URL ресурса.", "TCP направляется через туннель; UDP блокируется. Kill switch сохраняет защиту при обрыве. Явное отключение возвращает обычную сеть."}
+	}
 	return ProfileView{"Локальный прокси · только выбранные приложения", "Режим подключения", "Локальный прокси не меняет настройки Windows. В режиме всего устройства kill switch сохраняет защиту при обрыве и аварии службы.", "Локальный адрес прокси используется браузером или другим выбранным приложением.", "Трафик направляется через туннель. Kill switch сохраняет блокировку при обрыве; явное отключение возвращает обычную сеть."}
 }
 func defaults() protocol.TransportOptions {
@@ -223,7 +226,7 @@ func importPreview(source, name string) ImportPreview {
 	result.Protocol = &p.Protocol
 	result.Name = p.Name
 	result.Source = p.Source
-	result.Description = "Распознано: " + []string{"AmneziaWG", "WireGuard", "VLESS", "SOCKS5", "Hysteria2", "Shadowsocks"}[p.Protocol]
+	result.Description = "Распознано: " + protocol.Names[p.Protocol]
 	return result
 }
 

@@ -244,6 +244,9 @@ func allowed(q map[string]string, keys string) bool {
 }
 func Outbound(source string, kind int) (object, error) {
 	source = strings.TrimSpace(source)
+	if kind >= HTTP && kind <= MaxKind {
+		return nativeProxy(source, kind)
+	}
 	var original object
 	var e error
 	if strings.HasPrefix(source, "{") {
@@ -529,7 +532,7 @@ func Compile(source string, kind int, tun bool, localPort, bridgePort int, xrayP
 		p.NativeSource = native
 		return p, e
 	}
-	if kind < 2 || kind > 5 || localPort < 1 || localPort > 65535 {
+	if kind < 2 || kind > MaxKind || localPort < 1 || localPort > 65535 {
 		return p, ErrConfiguration
 	}
 	p.LocalPort = localPort
@@ -544,7 +547,7 @@ func Compile(source string, kind int, tun bool, localPort, bridgePort int, xrayP
 		return Plan{}, e
 	}
 	p.NativeShadowsocks = kind == 5 && nativeSS(outbound)
-	p.NeedsXray = kind != 3 && !p.NativeShadowsocks
+	p.NeedsXray = kind < HTTP && kind != 3 && !p.NativeShadowsocks
 	if p.NeedsXray {
 		if bridgePort < 1 || bridgePort > 65535 || bridgePort == localPort {
 			return Plan{}, ErrConfiguration

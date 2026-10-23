@@ -73,7 +73,7 @@ func Validate(r Request) string {
 		return ""
 	case "start":
 		p := r.Profile
-		if p == nil || !guid.MatchString(p.ID) || strings.ReplaceAll(p.ID, "-", "") == strings.Repeat("0", 32) || p.Protocol < 0 || p.Protocol > 5 || strings.TrimSpace(p.Source) == "" || len(utf16.Encode([]rune(p.Source))) > 131072 || len(utf16.Encode([]rune(p.Name))) > 4096 {
+		if p == nil || !guid.MatchString(p.ID) || strings.ReplaceAll(p.ID, "-", "") == strings.Repeat("0", 32) || p.Protocol < 0 || p.Protocol > protocol.MaxKind || strings.TrimSpace(p.Source) == "" || len(utf16.Encode([]rune(p.Source))) > 131072 || len(utf16.Encode([]rune(p.Name))) > 4096 {
 			return "invalid_configuration"
 		}
 		return ""

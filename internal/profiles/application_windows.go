@@ -134,7 +134,7 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 		r.Transport = &parsed
 	}
 	source := strings.TrimSpace(r.Source)
-	batch := IsURL(source) || strings.HasPrefix(source, "[") && !strings.Contains(strings.ToLower(source), "[interface]") || strings.HasPrefix(source, "{") && !strings.Contains(source, `"protocol"`) || strings.Contains(source, "\n") && !strings.Contains(strings.ToLower(source), "[interface]") && !strings.HasPrefix(source, "{") || !strings.Contains(source, "://") && !strings.HasPrefix(source, "[") && !strings.HasPrefix(source, "{")
+	batch := IsURL(source) || strings.HasPrefix(source, "[") && !strings.Contains(strings.ToLower(source), "[interface]") || strings.HasPrefix(source, "{") && !strings.Contains(source, `"protocol"`) && !strings.Contains(source, `"type"`) || strings.Contains(source, "\n") && !strings.Contains(strings.ToLower(source), "[interface]") && !strings.HasPrefix(source, "{") || !strings.Contains(source, "://") && !strings.HasPrefix(source, "[") && !strings.HasPrefix(source, "{")
 	if strings.HasPrefix(source, "{") && strings.Contains(source, `"outbounds"`) {
 		batch = true
 	}
@@ -212,7 +212,7 @@ func (a *Application) Prepare(ctx context.Context, id string) (Applied, error) {
 	}
 	r := Applied{Document: d, Selected: selected}
 	source := d.SubscriptionSources[selected.Group]
-	if source == "" || (selected.Protocol != 2 && selected.Protocol != 4 && selected.Protocol != 5) {
+	if source == "" || selected.Protocol < 2 {
 		return r, nil
 	}
 	batch, e := a.Downloader(ctx, source)
@@ -278,7 +278,7 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 	case "transport.defaults":
 		return defaults(), nil
 	case "profile.view":
-		if r.Requested == nil || *r.Requested < 0 || *r.Requested > 5 {
+		if r.Requested == nil || *r.Requested < 0 || *r.Requested > protocol.MaxKind {
 			return nil, ErrImport
 		}
 		return profileView(*r.Requested), nil
