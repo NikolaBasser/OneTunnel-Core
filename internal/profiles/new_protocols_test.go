@@ -3,7 +3,7 @@ package profiles
 import (
 	"encoding/base64"
 	"encoding/json"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"strings"
 	"testing"
 )

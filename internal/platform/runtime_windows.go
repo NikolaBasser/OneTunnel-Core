@@ -23,8 +23,8 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 // Session is compatible with 0.6–0.8, including .NET UTC ticks. Paths read

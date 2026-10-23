@@ -4,7 +4,7 @@ import (
 	"context"
 	"golang.org/x/sys/windows"
 	"net"
-	"onetunnel/core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"unsafe"
 )
 

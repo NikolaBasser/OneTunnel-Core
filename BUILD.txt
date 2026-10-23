@@ -33,6 +33,13 @@ For Windows production-tag tests and vet, use the exact tags in .github/workflow
 Core CI does not require .NET, UI assets or a Windows application checkout.
 No release or artifact publication is performed by this workflow.
 
+PORTABLE FOUNDATION
+The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
+go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles
+The SDK delegates to existing implementations and requires an explicit runtime adapter.
+Foundation library compilation for Linux/Android/iOS is not application linking,
+device validation, gomobile binding, route/DNS integration or a working VPN package.
+
 LEGAL NOTICES
 go.mod/go.sum pin dependencies; generated bundles include notices collected from
 the actual linked modules. Static upstream notices are retained in licenses/.

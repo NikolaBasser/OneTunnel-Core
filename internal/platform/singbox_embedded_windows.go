@@ -2,7 +2,7 @@
 
 package platform
 
-import "onetunnel/core/internal/embeddedsingbox"
+import "github.com/NikolaBasser/OneTunnel-Core/internal/embeddedsingbox"
 
 // TUN is embedded only in the separate experimental full-device build.
 func embeddedSingBoxAllowed(fullDevice, accurateTime bool) bool {

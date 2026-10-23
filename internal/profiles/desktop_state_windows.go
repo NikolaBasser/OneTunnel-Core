@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/platform"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 )
 
 // UI context describes view inputs only. All connection decisions stay in Go.

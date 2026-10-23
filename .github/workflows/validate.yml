@@ -24,8 +24,13 @@ jobs:
         with:
           go-version: '1.27.3'
           cache-dependency-path: go.sum
-      - run: go test -mod=readonly -count=1 ./internal/control ./internal/protocol ./internal/profiles
-      - run: go vet -mod=readonly ./internal/control ./internal/protocol ./internal/profiles
+      - run: go test -mod=readonly -count=1 ./internal/control ./internal/protocol ./internal/profiles ./sdk
+      - run: go vet -mod=readonly ./internal/control ./internal/protocol ./internal/profiles ./sdk
+      - name: Compile mobile foundation libraries (no executable or device validation)
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -mod=readonly ./sdk
+          GOOS=ios GOARCH=arm64 CGO_ENABLED=0 go build -mod=readonly ./sdk
   windows:
     name: Windows x64 full embedded core
     runs-on: windows-2025

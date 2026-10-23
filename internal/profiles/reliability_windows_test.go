@@ -3,7 +3,7 @@ package profiles
 import (
 	"context"
 	"encoding/json"
-	"onetunnel/core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"strings"
 	"testing"
 )

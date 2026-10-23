@@ -20,8 +20,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/rivo/uniseg"
-	"onetunnel/core/internal/control"
-	"onetunnel/core/internal/protocol"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 const MaxBytes = 4 * 1024 * 1024

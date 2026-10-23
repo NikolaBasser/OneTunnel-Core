@@ -1,6 +1,6 @@
 package control
 
-import "onetunnel/core/internal/protocol"
+import "github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 
 func CompatibleFallback(primary, backup Profile, full bool) bool {
 	if full {

@@ -1,4 +1,4 @@
-module onetunnel/core
+module github.com/NikolaBasser/OneTunnel-Core
 
 go 1.27.0
 

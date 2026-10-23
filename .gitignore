@@ -1,6 +1,7 @@
 # Local documentation, build output, caches and private diagnostics
 *.md
 *.MD
+!/README.md
 /docs/
 /artifacts/
 /dist/
@@ -67,3 +68,4 @@
 !/internal/profiles/new_protocols_test.go
 !/internal/profiles/reliability_windows_test.go
 !/internal/profiles/bundle_settings_windows_test.go
+!/sdk/sdk_test.go
