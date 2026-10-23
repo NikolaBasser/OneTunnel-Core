@@ -109,3 +109,11 @@ func (e *Engine) Status() (Status, error) {
 	}
 	return status, nil
 }
+
+func (e *Engine) Counters() (uploaded, downloaded uint64, err error) {
+	status, err := e.Status()
+	if err != nil {
+		return 0, 0, err
+	}
+	return status.Transmitted, status.Received, nil
+}

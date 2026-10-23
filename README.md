@@ -128,3 +128,12 @@ DoH/DoT endpoints routed through the proxy; the default resolver remains final.
 An opt-in LAN exception sends only RFC1918 IPv4 and IPv6 ULA directly after
 explicit user rules. It defaults off, does not exclude OS routes, and never
 removes persistent traffic protection. Native AWG/WG remain configuration-driven.
+
+Connection statistics come from the embedded engine and reset for each successful
+connection attempt, including reconnect/fallback. Local-proxy payload includes
+connection checks. Whole-device proxy totals count TUN payload and fast-flow
+packet bytes; native AWG/WG totals are transport counters. Rates are unavailable
+until two samples exist. These are not provider billing counters. Older services
+without statistics remain supported and show no fabricated totals. Diagnostics
+classify typed failures by bounded stage/category; unsupported authentication
+causes remain unknown rather than guessing from log text.

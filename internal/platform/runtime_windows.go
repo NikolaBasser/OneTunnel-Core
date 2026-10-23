@@ -47,27 +47,35 @@ type child struct {
 	started int64
 }
 type Runtime struct {
-	bootstrapIPs    map[string]string
-	retry           retryState
-	retrying        bool
-	retryMu         sync.Mutex
-	retryCancel     context.CancelFunc
-	directory, root string
-	lock            trafficLock
-	operations      sync.Mutex
-	stateMu         sync.Mutex
-	state           control.State
-	session         *Session
-	transportFailed bool
-	engine, xray    *child
-	embeddedXray    interface{ Close() error }
-	embeddedProxy   interface{ Close() error }
-	embeddedNative  nativeEngine
-	job             windows.Handle
-	update          func(control.State)
-	dead            atomic.Bool
-	stop            chan struct{}
-	monitorDone     chan struct{}
+	bootstrapIPs       map[string]string
+	retry              retryState
+	retrying           bool
+	retryMu            sync.Mutex
+	retryCancel        context.CancelFunc
+	directory, root    string
+	lock               trafficLock
+	operations         sync.Mutex
+	stateMu            sync.Mutex
+	state              control.State
+	session            *Session
+	transportFailed    bool
+	engine, xray       *child
+	embeddedXray       interface{ Close() error }
+	embeddedProxy      interface{ Close() error }
+	embeddedNative     nativeEngine
+	statisticsProvider interface {
+		Statistics(time.Time) *control.ConnectionStatistics
+	}
+	statisticsNative interface {
+		Counters() (uint64, uint64, error)
+	}
+	statisticsAccumulator *control.StatisticsAccumulator
+	statisticsSessionID   string
+	job                   windows.Handle
+	update                func(control.State)
+	dead                  atomic.Bool
+	stop                  chan struct{}
+	monitorDone           chan struct{}
 }
 
 func NewRuntime(directory, owner string, update func(control.State), _ func()) (*Runtime, error) {
@@ -151,6 +159,7 @@ func (r *Runtime) snapshot() control.State {
 	return r.state
 }
 func (r *Runtime) publish(status string) {
+	r.sampleStatistics(time.Now())
 	r.stateMu.Lock()
 	r.state.Active = r.session != nil && !r.transportFailed
 	r.state.NeedsRecovery = r.transportFailed || (r.session == nil && r.recovery())
@@ -170,6 +179,48 @@ func (r *Runtime) publish(status string) {
 	state := r.state
 	r.stateMu.Unlock()
 	r.update(state)
+}
+
+func (r *Runtime) sampleStatistics(now time.Time) {
+	if r.statisticsProvider != nil {
+		r.setStatistics(r.statisticsProvider.Statistics(now))
+	} else if r.statisticsNative != nil && r.statisticsAccumulator != nil {
+		if uploaded, downloaded, err := r.statisticsNative.Counters(); err == nil {
+			r.statisticsAccumulator.UpdateAbsolute(uploaded, downloaded)
+			r.setStatistics(r.statisticsAccumulator.Snapshot(now, r.statisticsSessionID))
+		} else {
+			r.statisticsAccumulator.ResetRateBaseline()
+			r.setStatistics(nil)
+		}
+	}
+}
+
+func (r *Runtime) setStatistics(value *control.ConnectionStatistics) {
+	r.stateMu.Lock()
+	r.state.Statistics = value
+	r.stateMu.Unlock()
+}
+
+func (r *Runtime) activateStatistics() {
+	r.statisticsProvider = nil
+	r.statisticsNative = nil
+	r.statisticsAccumulator = nil
+	r.statisticsSessionID = ""
+	if provider, ok := r.embeddedProxy.(interface {
+		Statistics(time.Time) *control.ConnectionStatistics
+	}); ok {
+		r.statisticsProvider = provider
+	} else if counters, ok := r.embeddedNative.(interface {
+		Counters() (uint64, uint64, error)
+	}); ok {
+		stats, id, err := control.NewStatisticsAccumulator(time.Now(), "native-transport")
+		if err == nil {
+			r.statisticsNative, r.statisticsAccumulator, r.statisticsSessionID = counters, stats, id
+		}
+	}
+	r.stateMu.Lock()
+	r.state.Statistics = nil
+	r.stateMu.Unlock()
 }
 func (r *Runtime) Alive() bool { return !r.dead.Load() }
 func (r *Runtime) Call(ctx context.Context, request control.Request) (control.BackendResult, error) {
@@ -192,6 +243,7 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 		r.bootstrapIPs = map[string]string{}
 		e = r.start(ctx, request)
 		if e == nil {
+			r.activateStatistics()
 			r.armRetry(request)
 		}
 	case "check-profile":
@@ -236,7 +288,17 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 		}
 		code = &value
 	}
-	return control.BackendResult{State: r.snapshot(), Result: result, Error: code}, nil
+	var errorInfo *control.ErrorInfo
+	if e != nil {
+		stage := failureStage(e, "engine")
+		if errors.Is(e, protocol.ErrConfiguration) || errors.Is(e, protocol.ErrTransportUpgrade) {
+			stage = "configuration"
+		} else if stage != "bootstrap" && (request.Command == "check-profile" || request.Command == "probe") {
+			stage = "probe"
+		}
+		errorInfo = control.ClassifyError(stage, e)
+	}
+	return control.BackendResult{State: r.snapshot(), Result: result, Error: code, ErrorInfo: errorInfo}, nil
 }
 func (r *Runtime) monitor() {
 	defer close(r.monitorDone)
@@ -325,6 +387,7 @@ func (r *Runtime) Close() {
 	defer r.operations.Unlock()
 	// Service shutdown releases in-process sockets, just as closing the job
 	// releases child engines. Keep the journal and WFP state for recovery.
+	r.publish("")
 	if r.embeddedNative != nil {
 		_ = r.embeddedNative.Close()
 		r.embeddedNative = nil
@@ -687,7 +750,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			var server string
 			synchronize, server, err = discoverClock(ctx)
 			if err != nil {
-				return err
+				return stageError{stage: "bootstrap", err: err}
 			}
 			if synchronize {
 				clock, e := decodeConfig(plan.Clock)
@@ -719,7 +782,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			if marshalErr != nil {
 				return marshalErr
 			}
-			r.embeddedProxy, err = startEmbeddedSingBox(data)
+			r.embeddedProxy, err = startEmbeddedSingBox(data, request.FullDevice)
 			clear(data)
 			if err != nil {
 				return err
@@ -996,6 +1059,10 @@ func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
 			}
 		}
 		r.session = nil
+		r.statisticsProvider = nil
+		r.statisticsNative = nil
+		r.statisticsAccumulator = nil
+		r.statisticsSessionID = ""
 	}
 	if !retainLock {
 		if e := r.lock.remove(false); e != nil {

@@ -40,30 +40,33 @@ type Request struct {
 	FullDevice bool      `json:"FullDevice"`
 }
 type State struct {
-	Reconnecting      bool    `json:"Reconnecting,omitempty"`
-	ReconnectAttempt  int     `json:"ReconnectAttempt,omitempty"`
-	Active            bool    `json:"Active"`
-	NeedsRecovery     bool    `json:"NeedsRecovery"`
-	TrafficLocked     bool    `json:"TrafficLocked"`
-	WholeDevice       bool    `json:"WholeDevice"`
-	FullDeviceMode    bool    `json:"FullDeviceMode"`
-	ClockSynchronized bool    `json:"ClockSynchronized"`
-	LocalPort         int     `json:"LocalPort"`
-	Status            string  `json:"Status"`
-	ProfileID         *string `json:"ProfileId"`
+	Reconnecting      bool                  `json:"Reconnecting,omitempty"`
+	ReconnectAttempt  int                   `json:"ReconnectAttempt,omitempty"`
+	Active            bool                  `json:"Active"`
+	NeedsRecovery     bool                  `json:"NeedsRecovery"`
+	TrafficLocked     bool                  `json:"TrafficLocked"`
+	WholeDevice       bool                  `json:"WholeDevice"`
+	FullDeviceMode    bool                  `json:"FullDeviceMode"`
+	ClockSynchronized bool                  `json:"ClockSynchronized"`
+	LocalPort         int                   `json:"LocalPort"`
+	Status            string                `json:"Status"`
+	ProfileID         *string               `json:"ProfileId"`
+	Statistics        *ConnectionStatistics `json:"Statistics,omitempty"`
 }
 type Response struct {
-	Revision uint64  `json:"Revision,omitempty"`
-	Version  int     `json:"Version"`
-	Instance string  `json:"Instance"`
-	State    State   `json:"State"`
-	Result   *string `json:"Result"`
-	Error    *string `json:"Error"`
+	Revision  uint64     `json:"Revision,omitempty"`
+	Version   int        `json:"Version"`
+	Instance  string     `json:"Instance"`
+	State     State      `json:"State"`
+	Result    *string    `json:"Result"`
+	Error     *string    `json:"Error"`
+	ErrorInfo *ErrorInfo `json:"ErrorInfo,omitempty"`
 }
 type BackendResult struct {
-	State  State   `json:"State"`
-	Result *string `json:"Result"`
-	Error  *string `json:"Error"`
+	State     State      `json:"State"`
+	Result    *string    `json:"Result"`
+	Error     *string    `json:"Error"`
+	ErrorInfo *ErrorInfo `json:"ErrorInfo,omitempty"`
 }
 
 func Validate(r Request) string {

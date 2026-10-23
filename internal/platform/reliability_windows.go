@@ -99,6 +99,7 @@ func (r *Runtime) maintainConnection() {
 		done()
 	}
 	if err == nil {
+		r.activateStatistics()
 		r.retrying = false
 		r.transportFailed = false
 		r.retry.failures = 0

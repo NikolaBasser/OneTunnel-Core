@@ -77,11 +77,15 @@ func resolveEndpoint(ctx context.Context, host string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if resolver, ok := ctx.Value(bootstrapKey{}).(*bootstrapResolver); ok {
-		return resolver.lookup(ctx, host)
+		address, err := resolver.lookup(ctx, host)
+		if err != nil {
+			return "", stageError{stage: "bootstrap", err: err}
+		}
+		return address, nil
 	}
 	ips, e := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if e != nil {
-		return "", e
+		return "", stageError{stage: "bootstrap", err: e}
 	}
 	for _, ip := range ips {
 		if ip.IP.To4() != nil {
@@ -91,7 +95,22 @@ func resolveEndpoint(ctx context.Context, host string) (string, error) {
 	if len(ips) > 0 {
 		return ips[0].IP.String(), nil
 	}
-	return "", errors.New("no endpoint address")
+	return "", stageError{stage: "bootstrap", err: errors.New("no endpoint address")}
+}
+
+type stageError struct {
+	stage string
+	err   error
+}
+
+func (e stageError) Error() string { return e.err.Error() }
+func (e stageError) Unwrap() error { return e.err }
+func failureStage(err error, fallback string) string {
+	var staged stageError
+	if errors.As(err, &staged) {
+		return staged.stage
+	}
+	return fallback
 }
 
 type jsonObject = map[string]any

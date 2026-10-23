@@ -135,3 +135,11 @@ LAN access defaults off and covers10/8,172.16/12,192.168/16 and fc00::/7 only.
 Explicit user reject/proxy rules take precedence over the appended LAN exception.
 Save affects future shared-TUN proxy connections; native AWG/WG are unsupported.
 Local config tests do not establish live DNS/IPv6 leak or firewall behavior.
+
+CONNECTION STATISTICS
+The connection card renders Go-owned totals, rates, elapsed time and scope.
+Counters reset on reconnect/fallback; no accumulated history is stored.
+Local-proxy totals include connection checks. TUN fast flows include packet bytes;
+AWG/WG expose transport counters. Missing/error samples are unavailable, not zero.
+Error categories use typed causes; engine errors lacking typed causes remain unknown.
+A matching service is needed for metrics; old services continue without them.

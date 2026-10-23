@@ -73,6 +73,7 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 	reply = a.desktopState
 	reply.Response.Error = response.Error
 	reply.Response.Result = response.Result
+	reply.Response.ErrorInfo = response.ErrorInfo
 	if response.Error != nil {
 		reply.Message = platform.ServiceErrorMessage(*response.Error)
 	} else {

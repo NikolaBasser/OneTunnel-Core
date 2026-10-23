@@ -6,6 +6,9 @@ package embeddedsingbox
 import (
 	"context"
 	"errors"
+	"time"
+
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/sagernet/sing/common/ntp"
 	"github.com/sagernet/sing/service"
 	"sync"
@@ -33,15 +36,17 @@ import (
 )
 
 type Engine struct {
-	instance *box.Box
-	cancel   context.CancelFunc
-	once     sync.Once
-	err      error
-	clock    *privateClock
-	done     chan struct{}
+	instance   *box.Box
+	cancel     context.CancelFunc
+	once       sync.Once
+	err        error
+	clock      *privateClock
+	done       chan struct{}
+	statistics *control.StatisticsAccumulator
+	sessionID  string
 }
 
-func Start(data []byte) (*Engine, error) {
+func Start(data []byte, wholeDevice bool) (*Engine, error) {
 	in, out := inbound.NewRegistry(), outbound.NewRegistry()
 	registerTun(in)
 	mixed.RegisterInbound(in)
@@ -98,20 +103,32 @@ func Start(data []byte) (*Engine, error) {
 		service.MustRegister[ntp.TimeService](ctx, clock)
 	}
 	options.Log = &option.LogOptions{Disabled: true}
+	scope := "proxy-payload"
+	if wholeDevice {
+		scope = "proxy-payload-and-packets"
+	}
+	statistics, sessionID, err := control.NewStatisticsAccumulator(time.Now(), scope)
+	if err != nil {
+		statistics, sessionID = nil, ""
+	}
 	instance, err := box.New(box.Options{Context: ctx, Options: options})
 	if err != nil {
 		cancel()
 		return nil, errors.New("embedded sing-box initialization failed")
+	}
+	if statistics != nil {
+		instance.Router().AppendTracker(newIngressTracker(statistics, wholeDevice))
 	}
 	if err = instance.Start(); err != nil {
 		_ = instance.Close()
 		cancel()
 		return nil, errors.New("embedded sing-box startup failed")
 	}
+	statistics.MarkStarted(time.Now())
 	if clock != nil {
 		go clock.run(ctx)
 	}
-	return &Engine{instance: instance, cancel: cancel, clock: clock, done: make(chan struct{})}, nil
+	return &Engine{instance: instance, cancel: cancel, clock: clock, done: make(chan struct{}), statistics: statistics, sessionID: sessionID}, nil
 }
 
 // Validate constructs and closes an instance without starting listeners, TUN,
@@ -164,6 +181,13 @@ func Validate(data []byte) error {
 }
 
 func (e *Engine) ClockSynchronized() bool { return e != nil && e.clock != nil }
+
+func (e *Engine) Statistics(now time.Time) *control.ConnectionStatistics {
+	if e == nil || e.statistics == nil {
+		return nil
+	}
+	return e.statistics.Snapshot(now, e.sessionID)
+}
 
 func (e *Engine) Close() error {
 	if e == nil {
