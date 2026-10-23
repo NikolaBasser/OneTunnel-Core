@@ -125,7 +125,15 @@ func (r *Runtime) maintainConnection() {
 }
 
 func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string, error) {
-	if p == nil {
+	return r.checkProfileWithProbe(ctx, p, httpsCheck)
+}
+
+func (r *Runtime) checkProfileWithProbe(ctx context.Context, p *control.Profile, httpsProbe func(context.Context, int) error) (*string, error) {
+	return r.checkProfileWithProbeDirectory(ctx, p, httpsProbe, privateDirectory)
+}
+
+func (r *Runtime) checkProfileWithProbeDirectory(ctx context.Context, p *control.Profile, httpsProbe func(context.Context, int) error, prepareDirectory func(string) error) (*string, error) {
+	if p == nil || httpsProbe == nil || prepareDirectory == nil {
 		return nil, protocol.ErrConfiguration
 	}
 	if r.session != nil || r.recovery() {
@@ -133,20 +141,34 @@ func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string
 	}
 	started := time.Now()
 	result := control.ProfileCheck{NetworkTest: p.Protocol >= 2}
-	if !protocol.NetworkOptionsEmpty(p.Network) {
+	policyValidated := !protocol.NetworkOptionsEmpty(p.Network)
+	localProfile := *p
+	if p.Transport != nil {
+		options := *p.Transport
+		localProfile.Transport = &options
+	}
+	if p.Reliability != nil {
+		options := *p.Reliability
+		localProfile.Reliability = &options
+	}
+	if policyValidated {
 		plan, err := protocol.CompileWithNetwork(p.Source, p.Protocol, true, 18001, 18002, "unused", p.Transport, p.Network)
-		result.Success = err == nil && plan.Proxy != ""
-		result.NetworkTest = false
-		result.Message = "Конфигурация DNS и маршрутизации проверена; сетевой тест не выполнялся"
-		if !result.Success {
-			result.Message = "Некорректная конфигурация DNS или маршрутизации"
+		if err != nil || plan.Proxy == "" {
+			result.NetworkTest = false
+			result.Message = "Invalid DNS or routing configuration; no network check was started."
+			result.Milliseconds = time.Since(started).Milliseconds()
+			data, _ := json.Marshal(result)
+			text := string(data)
+			return &text, nil
 		}
-	} else if p.Protocol < 2 {
+		localProfile.Network = nil
+	}
+	if p.Protocol < 2 {
 		_, err := protocol.CompileWithNetwork(p.Source, p.Protocol, false, 18001, 18002, "unused", p.Transport, p.Network)
 		result.Success = err == nil
-		result.Message = "Конфигурация проверена; сетевой тест WG/AWG выполняется при подключении"
+		result.Message = "Configuration validated; native WG/AWG connectivity is checked during connection."
 		if err != nil {
-			result.Message = "Некорректная конфигурация"
+			result.Message = "Invalid configuration."
 		}
 	} else {
 		root, err := os.MkdirTemp(r.root, "profile-check-")
@@ -159,10 +181,11 @@ func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string
 				_ = os.RemoveAll(root)
 			}
 		}()
-		if err = privateDirectory(filepath.Join(root, "runtime")); err != nil {
+		if err = prepareDirectory(filepath.Join(root, "runtime")); err != nil {
+			cleaned = true
 			return nil, err
 		}
-		probe := &Runtime{directory: r.directory, root: root, lock: trafficLock{owner: "OneTunnel.ProfileCheck", root: root}, update: func(control.State) {}}
+		probe := &Runtime{directory: r.directory, root: root, lock: trafficLock{owner: "OneTunnel.ProfileCheck", root: root}, forceSecureBootstrap: policyValidated || r.forceSecureBootstrap, update: func(control.State) {}}
 		defer func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -172,9 +195,14 @@ func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string
 		}()
 		deadline, cancel := context.WithTimeout(ctx, 12*time.Second)
 		defer cancel()
-		err = probe.start(deadline, control.Request{Version: 1, Command: "start", Profile: p})
+		err = probe.start(deadline, control.Request{Version: 1, Command: "start", Profile: &localProfile})
 		if err == nil {
-			err = httpsCheck(deadline, probe.snapshot().LocalPort)
+			probeStarted := time.Now()
+			err = httpsProbe(deadline, probe.snapshot().LocalPort)
+			if err == nil {
+				latency := time.Since(probeStarted).Milliseconds()
+				result.HTTPSLatencyMilliseconds = &latency
+			}
 		}
 		result.Success = err == nil
 		cleanup, finish := context.WithTimeout(context.Background(), 15*time.Second)
@@ -184,9 +212,12 @@ func (r *Runtime) checkProfile(ctx context.Context, p *control.Profile) (*string
 			return nil, errors.New("profile check cleanup failed")
 		}
 		cleaned = true
-		result.Message = "Нет доступа через сервер"
+		result.Message = "The server HTTPS check failed."
 		if result.Success {
-			result.Message = "HTTPS через сервер работает"
+			result.Message = "Server HTTPS check succeeded."
+		}
+		if policyValidated {
+			result.Message += " Saved DNS and routing policy was validated as configuration only and was not applied. Infrastructure endpoint bootstrap remained encrypted."
 		}
 	}
 	result.Milliseconds = time.Since(started).Milliseconds()

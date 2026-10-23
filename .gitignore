@@ -101,3 +101,14 @@
 !/internal/profiles/user_settings_windows_test.go
 
 !/internal/platform/user_automation_transaction_windows_test.go
+
+!/internal/embeddedsingbox/clock_fixture_test.go
+!/internal/embeddedsingbox/engine_fixture_test.go
+!/internal/embeddedsingbox/proxy_fixture_test.go
+!/internal/embeddedxray/engine_fixture_test.go
+!/internal/embeddedxray/tls_security_fixture_test.go
+
+!/internal/platform/group_latency_windows_test.go
+!/internal/profiles/group_latency_windows_test.go
+!/internal/platform/profile_check_bootstrap_windows_test.go
+!/internal/platform/runtime_safety_windows_test.go

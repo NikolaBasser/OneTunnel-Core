@@ -10,9 +10,10 @@ import (
 )
 
 type GroupCheckRow struct {
-	ID, Name, Message    string
-	Success, NetworkTest bool
-	Milliseconds         int64
+	ID, Name, Message        string
+	Success, NetworkTest     bool
+	Milliseconds             int64
+	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
 }
 type GroupCheckResult struct {
 	Group     string
@@ -59,12 +60,26 @@ func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckR
 		if json.Unmarshal([]byte(*response.Result), &check) != nil {
 			return GroupCheckResult{}, errors.New("Обнови службу для проверки групп")
 		}
-		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message})
+		if !check.Success || !check.NetworkTest || check.HTTPSLatencyMilliseconds != nil && *check.HTTPSLatencyMilliseconds < 0 {
+			check.HTTPSLatencyMilliseconds = nil
+		}
+		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message, HTTPSLatencyMilliseconds: check.HTTPSLatencyMilliseconds})
 	}
 	if err := ctx.Err(); err != nil {
 		return GroupCheckResult{}, errors.New("Проверка прервана: служба недоступна или подключение занято")
 	}
-	rows := append([]GroupCheckRow(nil), result.Rows...)
+	rows := cloneGroupCheckRows(result.Rows)
 	a.groupResults = &completedGroupResults{result: GroupCheckResult{Group: result.Group, CheckedAt: result.CheckedAt, Rows: rows}, revision: revision, token: newID()}
 	return result, nil
+}
+
+func cloneGroupCheckRows(rows []GroupCheckRow) []GroupCheckRow {
+	copy := append([]GroupCheckRow(nil), rows...)
+	for i := range copy {
+		if copy[i].HTTPSLatencyMilliseconds != nil {
+			value := *copy[i].HTTPSLatencyMilliseconds
+			copy[i].HTTPSLatencyMilliseconds = &value
+		}
+	}
+	return copy
 }

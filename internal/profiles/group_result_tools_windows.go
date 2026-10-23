@@ -13,10 +13,11 @@ type completedGroupResults struct {
 }
 
 type GroupResultDisplayRow struct {
-	ID, Name, Message    string
-	Success, NetworkTest bool
-	Milliseconds         int64
-	TimingLabel          string
+	ID, Name, Message        string
+	Success, NetworkTest     bool
+	Milliseconds             int64
+	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
+	TimingLabel              string
 }
 
 type GroupResultsView struct {
@@ -50,7 +51,7 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 	}
 	view.Group, view.CheckedAt, view.Token = batch.result.Group, batch.result.CheckedAt, batch.token
 	view.HasResults = len(batch.result.Rows) > 0
-	rows := append([]GroupCheckRow(nil), batch.result.Rows...)
+	rows := cloneGroupCheckRows(batch.result.Rows)
 	if sortMode == "duration" {
 		sort.SliceStable(rows, func(i, j int) bool {
 			iOK, jOK := eligibleGroupResult(rows[i]), eligibleGroupResult(rows[j])
@@ -62,6 +63,9 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 	}
 	view.Rows = make([]GroupResultDisplayRow, 0, len(rows))
 	for _, row := range rows {
+		if !row.Success || !row.NetworkTest || row.HTTPSLatencyMilliseconds != nil && *row.HTTPSLatencyMilliseconds < 0 {
+			row.HTTPSLatencyMilliseconds = nil
+		}
 		eligible := eligibleGroupResult(row)
 		switch filter {
 		case "reachable":
@@ -83,10 +87,13 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 			if row.Milliseconds >= 0 {
 				label = formatCheckDuration(row.Milliseconds)
 			}
+			if row.Success && row.HTTPSLatencyMilliseconds != nil && *row.HTTPSLatencyMilliseconds >= 0 {
+				label += fmt.Sprintf(" · %d ms HTTPS latency (not ICMP RTT)", *row.HTTPSLatencyMilliseconds)
+			}
 		}
 		view.Rows = append(view.Rows, GroupResultDisplayRow{
 			ID: row.ID, Name: row.Name, Message: row.Message, Success: row.Success,
-			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label,
+			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label, HTTPSLatencyMilliseconds: row.HTTPSLatencyMilliseconds,
 		})
 	}
 	view.Stale = a.Store == nil

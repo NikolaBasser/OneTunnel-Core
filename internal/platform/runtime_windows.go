@@ -47,23 +47,24 @@ type child struct {
 	started int64
 }
 type Runtime struct {
-	bootstrapIPs       map[string]string
-	retry              retryState
-	retrying           bool
-	retryMu            sync.Mutex
-	retryCancel        context.CancelFunc
-	directory, root    string
-	lock               trafficLock
-	operations         sync.Mutex
-	stateMu            sync.Mutex
-	state              control.State
-	session            *Session
-	transportFailed    bool
-	engine, xray       *child
-	embeddedXray       interface{ Close() error }
-	embeddedProxy      interface{ Close() error }
-	embeddedNative     nativeEngine
-	statisticsProvider interface {
+	forceSecureBootstrap bool
+	bootstrapIPs         map[string]string
+	retry                retryState
+	retrying             bool
+	retryMu              sync.Mutex
+	retryCancel          context.CancelFunc
+	directory, root      string
+	lock                 trafficLock
+	operations           sync.Mutex
+	stateMu              sync.Mutex
+	state                control.State
+	session              *Session
+	transportFailed      bool
+	engine, xray         *child
+	embeddedXray         interface{ Close() error }
+	embeddedProxy        interface{ Close() error }
+	embeddedNative       nativeEngine
+	statisticsProvider   interface {
 		Statistics(time.Time) *control.ConnectionStatistics
 	}
 	statisticsNative interface {
@@ -93,11 +94,15 @@ func NewRuntime(directory, owner string, update func(control.State), _ func()) (
 	if e = privateDirectory(filepath.Join(root, "runtime")); e != nil {
 		return nil, e
 	}
+	return newRuntimeAtRoot(directory, owner, root, update), nil
+}
+
+func newRuntimeAtRoot(directory, owner, root string, update func(control.State)) *Runtime {
 	r := &Runtime{directory: directory, root: root, lock: trafficLock{owner, root}, update: update, stop: make(chan struct{}), monitorDone: make(chan struct{})}
 	r.state.Status = "Отключено"
 	r.publish("")
 	go r.monitor()
-	return r, nil
+	return r
 }
 func privateDirectory(path string) error {
 	if info, e := os.Lstat(path); e == nil {
@@ -552,13 +557,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if r.bootstrapIPs == nil {
 		r.bootstrapIPs = map[string]string{}
 	}
-	secureBootstrap := r.retrying && r.lock.needed()
-	forceSecureBootstrap := false
-	if request.Profile != nil && !protocol.NetworkOptionsEmpty(request.Profile.Network) {
-		secureBootstrap = true
-		forceSecureBootstrap = true
-	}
-	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: r.bootstrapIPs, secure: secureBootstrap, forceSecure: forceSecureBootstrap, attempt: r.retry.attempt})
+	ctx = r.bootstrapContext(ctx, request.Profile)
 	if request.Profile == nil {
 		return protocol.ErrConfiguration
 	}
@@ -707,6 +706,10 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 				if err = prepareXray(ctx, c); err != nil {
 					return err
 				}
+			} else if r.forceSecureBootstrap {
+				if err = prepareXrayWithBinding(ctx, c, func(jsonObject, string) error { return nil }); err != nil {
+					return err
+				}
 			}
 			xrayConfig := path + ".xray.json"
 			if err = writeConfig(xrayConfig, c); err != nil {
@@ -762,7 +765,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 				jObject(c["log"])["level"] = "info"
 			}
 		}
-		if request.FullDevice {
+		if request.FullDevice || r.forceSecureBootstrap {
 			jObject(c["log"])["level"] = "info"
 			if !plan.NeedsXray {
 				out := first(c["outbounds"])

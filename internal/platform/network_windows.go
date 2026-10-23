@@ -137,6 +137,10 @@ func decodeConfig(text string) (jsonObject, error) {
 	return c, e
 }
 func prepareXray(ctx context.Context, c jsonObject) error {
+	return prepareXrayWithBinding(ctx, c, nil)
+}
+
+func prepareXrayWithBinding(ctx context.Context, c jsonObject, bindOverride func(jsonObject, string) error) error {
 	out := first(c["outbounds"])
 	stream := jObject(out["streamSettings"])
 	settings := jObject(out["settings"])
@@ -180,15 +184,18 @@ func prepareXray(ctx context.Context, c jsonObject) error {
 		}
 		peer["address"] = address
 	}
-	bind := func(s jsonObject, address string) error {
-		adapter, e := routeInterface(address)
-		if e != nil || strings.HasPrefix(adapter, "OneTunnel") {
-			return errors.New("physical uplink unavailable")
+	bind := bindOverride
+	if bind == nil {
+		bind = func(s jsonObject, address string) error {
+			adapter, e := routeInterface(address)
+			if e != nil || strings.HasPrefix(adapter, "OneTunnel") {
+				return errors.New("physical uplink unavailable")
+			}
+			sock := jObject(s["sockopt"])
+			sock["interface"] = adapter
+			s["sockopt"] = sock
+			return nil
 		}
-		sock := jObject(s["sockopt"])
-		sock["interface"] = adapter
-		s["sockopt"] = sock
-		return nil
 	}
 	if e := bind(stream, jString(peer["address"])); e != nil {
 		return e

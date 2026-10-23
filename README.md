@@ -153,3 +153,9 @@ PAC/auto-detection conflicts block activation. External changes are retained and
 reported; machine WinHTTP is never modified. Closing the user host releases its
 proxy lease without stopping the VPN service. Portable restore disables automatic
 activation and excludes machine startup ownership.
+
+Group checks report total check duration separately from successful HTTPS probe
+latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
+Saved shared-TUN DNS/routing policies are validated, then left unapplied during
+the local server check; infrastructure endpoint bootstrap stays encrypted.
+Native WG/AWG group checks remain configuration-only and do not report latency.

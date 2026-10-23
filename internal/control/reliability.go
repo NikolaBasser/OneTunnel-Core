@@ -30,8 +30,9 @@ type ReliabilityOptions struct {
 }
 
 type ProfileCheck struct {
-	Success      bool
-	NetworkTest  bool
-	Milliseconds int64
-	Message      string
+	Success                  bool
+	NetworkTest              bool
+	Milliseconds             int64
+	Message                  string
+	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
 }
