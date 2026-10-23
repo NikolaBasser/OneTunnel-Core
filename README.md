@@ -6,6 +6,11 @@ The core owns protocol handling, profile import, subscription parsing, configura
 planning and connection coordination. Native adapters own operating-system integration.
 The Windows runtime embeds Xray, sing-box and AmneziaWG in the Go service.
 
+The Windows user host manages saved subscriptions with manual refresh, an explicit
+change preview and one-time Apply/Cancel tokens. Preview never writes the profile
+store; intervening changes require a fresh review. Provider-reported usage and
+expiry are optional metadata, not connection or entitlement guarantees.
+
 ## Protocols
 
 AmneziaWG, WireGuard, VLESS, SOCKS5, Hysteria2, Shadowsocks, HTTP CONNECT/HTTPS proxy,

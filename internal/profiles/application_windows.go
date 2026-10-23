@@ -2,14 +2,18 @@ package profiles
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"golang.org/x/sys/windows"
+	"fmt"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -31,6 +35,7 @@ type Request struct {
 	Incoming       []Profile
 	Document       *Document
 	ID             string
+	Token          string
 	Transport      *protocol.TransportOptions
 	Data           []byte
 	Encrypt        bool
@@ -72,6 +77,250 @@ type Application struct {
 	desktopChecked  uint64
 	desktopRevision uint64
 	desktopRetired  map[string]bool
+	pendingPreview  *pendingSubscriptionPreview
+}
+
+type pendingSubscriptionPreview struct {
+	token, group                                 string
+	baseline                                     [32]byte
+	candidate                                    Document
+	expires                                      time.Time
+	added, updated, removed, duplicates, skipped int
+}
+
+type SubscriptionSummary struct {
+	Group        string
+	ProfileCount int
+	UpdatedAt    string
+	Usage        string
+	Expiry       string
+	CanRefresh   bool
+}
+type SubscriptionChange struct{ Name, Protocol, Kind string }
+type SubscriptionPreview struct {
+	Token, Group, Usage, Expiry, ExpiresAt       string
+	Added, Updated, Removed, Duplicates, Skipped int
+	Changes                                      []SubscriptionChange
+	CanApply                                     bool
+}
+
+func recordSubscriptionMetadata(d *Document, group string, metadata *SubscriptionMetadata) {
+	if d.SubscriptionMetadata == nil {
+		d.SubscriptionMetadata = map[string]SubscriptionMetadata{}
+	}
+	value := SubscriptionMetadata{UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+	if metadata != nil {
+		value.Upload, value.Download, value.Total, value.Expire = metadata.Upload, metadata.Download, metadata.Total, metadata.Expire
+	}
+	d.SubscriptionMetadata[group] = value
+}
+
+func formatBytes(value uint64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
+	n := float64(value)
+	i := 0
+	for n >= 1000 && i < len(units)-1 {
+		n /= 1000
+		i++
+	}
+	if i == 0 {
+		return fmt.Sprintf("%d B", value)
+	}
+	return fmt.Sprintf("%.1f %s", n, units[i])
+}
+
+func metadataDisplay(m SubscriptionMetadata) (string, string) {
+	usage := "Unknown · provider did not report usage"
+	quota := m.Total != nil && *m.Total > 0
+	var used uint64
+	usedKnown := false
+	if m.Upload != nil && m.Download != nil {
+		if ^uint64(0)-*m.Upload >= *m.Download {
+			used = *m.Upload + *m.Download
+			usedKnown = true
+		}
+	}
+	if usedKnown {
+		if quota {
+			remaining := uint64(0)
+			if *m.Total > used {
+				remaining = *m.Total - used
+			}
+			usage = fmt.Sprintf("%s used · %s remaining of %s · reported by provider", formatBytes(used), formatBytes(remaining), formatBytes(*m.Total))
+		} else {
+			usage = fmt.Sprintf("%s used · reported by provider", formatBytes(used))
+		}
+	} else if m.Upload != nil || m.Download != nil || quota {
+		parts := []string{}
+		if m.Upload != nil {
+			parts = append(parts, "upload "+formatBytes(*m.Upload))
+		} else {
+			parts = append(parts, "upload unknown")
+		}
+		if m.Download != nil {
+			parts = append(parts, "download "+formatBytes(*m.Download))
+		} else {
+			parts = append(parts, "download unknown")
+		}
+		if quota {
+			parts = append(parts, "quota "+formatBytes(*m.Total))
+		}
+		usage = strings.Join(parts, " · ") + " · reported by provider"
+	}
+	expiry := "Unknown · provider did not report expiry"
+	if m.Expire != nil && *m.Expire > 0 && *m.Expire <= 253402300799 {
+		expiry = time.Unix(int64(*m.Expire), 0).UTC().Format("02 Jan 2006") + " · reported by provider"
+	}
+	return usage, expiry
+}
+
+func (a *Application) refreshAllowed() bool {
+	state := a.desktopState.Response.State
+	if state.Active || state.Reconnecting || state.NeedsRecovery || state.TrafficLocked {
+		return false
+	}
+	return !existsProfileFile(a.Store.Root, "session.json") && !existsProfileFile(a.Store.Root, "kill-switch.json")
+}
+
+func (a *Application) subscriptionList() ([]SubscriptionSummary, error) {
+	d, err := a.Store.Load()
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, p := range d.Profiles {
+		counts[p.Group]++
+	}
+	groups := make([]string, 0, len(d.SubscriptionSources))
+	for group := range d.SubscriptionSources {
+		if counts[group] > 0 {
+			groups = append(groups, group)
+		}
+	}
+	sort.Strings(groups)
+	out := make([]SubscriptionSummary, 0, len(groups))
+	for _, group := range groups {
+		m := d.SubscriptionMetadata[group]
+		usage, expiry := metadataDisplay(m)
+		out = append(out, SubscriptionSummary{Group: group, ProfileCount: counts[group], UpdatedAt: m.UpdatedAt, Usage: usage, Expiry: expiry, CanRefresh: a.refreshAllowed()})
+	}
+	return out, nil
+}
+
+func (a *Application) refreshPreview(ctx context.Context, group string) (SubscriptionPreview, error) {
+	a.pendingPreview = nil
+	d, err := a.Store.Load()
+	if err != nil {
+		return SubscriptionPreview{}, err
+	}
+	if !a.refreshAllowed() {
+		return SubscriptionPreview{}, errors.New("Обновление подписок временно недоступно.")
+	}
+	source := d.SubscriptionSources[group]
+	hasGroup := false
+	for _, p := range d.Profiles {
+		if p.Group == group {
+			hasGroup = true
+			break
+		}
+	}
+	if source == "" || !hasGroup {
+		return SubscriptionPreview{}, errors.New("Сохранённая подписка не найдена. Обнови список.")
+	}
+	baseline := a.Store.revision
+	original := append([]Profile(nil), d.Profiles...)
+	batch, err := a.Downloader(ctx, source)
+	if err != nil {
+		return SubscriptionPreview{}, err
+	}
+	merged, err := Merge(d.Profiles, batch.Profiles, group)
+	if err != nil {
+		return SubscriptionPreview{}, ErrImport
+	}
+	if len(batch.Profiles) == 0 || len(merged.Profiles) > 2000 {
+		return SubscriptionPreview{}, ErrImport
+	}
+	for _, p := range merged.Profiles {
+		if err := Validate(p); err != nil {
+			return SubscriptionPreview{}, err
+		}
+	}
+	d.Profiles = merged.Profiles
+	recordSubscriptionMetadata(&d, group, batch.Metadata)
+	changes := make([]SubscriptionChange, 0, merged.Added+merged.Updated+merged.Removed)
+	oldByID, newByID := map[string]Profile{}, map[string]Profile{}
+	for _, p := range original {
+		oldByID[p.ID] = p
+	}
+	for _, p := range merged.Profiles {
+		newByID[p.ID] = p
+	}
+	for _, candidate := range merged.Profiles {
+		if candidate.Group != group {
+			continue
+		}
+		if old, ok := oldByID[candidate.ID]; !ok {
+			changes = append(changes, SubscriptionChange{Name: candidate.Name, Protocol: protocolName(candidate.Protocol), Kind: "added"})
+		} else if old.Source != candidate.Source || old.Name != candidate.Name {
+			changes = append(changes, SubscriptionChange{Name: candidate.Name, Protocol: protocolName(candidate.Protocol), Kind: "updated"})
+		}
+	}
+	for _, old := range original {
+		if old.Group == group {
+			if _, ok := newByID[old.ID]; !ok {
+				// Merge retains protocol families absent from the response; removed IDs are exact merge removals.
+				changes = append(changes, SubscriptionChange{Name: old.Name, Protocol: protocolName(old.Protocol), Kind: "removed"})
+			}
+		}
+	}
+	var tokenBytes [24]byte
+	if _, err = rand.Read(tokenBytes[:]); err != nil {
+		return SubscriptionPreview{}, errors.New("Не удалось подготовить просмотр обновления.")
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes[:])
+	expires := time.Now().UTC().Add(10 * time.Minute)
+	usage, expiry := metadataDisplay(d.SubscriptionMetadata[group])
+	pending := &pendingSubscriptionPreview{token: token, group: group, baseline: baseline, candidate: d, expires: expires,
+		added: merged.Added, updated: merged.Updated, removed: merged.Removed, duplicates: batch.Duplicates, skipped: batch.Skipped}
+	a.pendingPreview = pending
+	return SubscriptionPreview{Token: token, Group: group, Usage: usage, Expiry: expiry, ExpiresAt: expires.Format(time.RFC3339),
+		Added: merged.Added, Updated: merged.Updated, Removed: merged.Removed, Duplicates: batch.Duplicates, Skipped: batch.Skipped,
+		Changes: changes, CanApply: a.refreshAllowed()}, nil
+}
+
+func protocolName(kind int) string {
+	if kind >= 0 && kind < len(protocol.Names) {
+		return protocol.Names[kind]
+	}
+	return "Unknown"
+}
+
+func (a *Application) applyRefresh(token string) (Applied, error) {
+	pending := a.pendingPreview
+	if pending == nil || token == "" || token != pending.token {
+		return Applied{}, errors.New("Просмотр обновления недействителен. Получи новый.")
+	}
+	a.pendingPreview = nil
+	if time.Now().After(pending.expires) {
+		return Applied{}, errors.New("Срок просмотра обновления истёк. Получи новый.")
+	}
+	if !a.refreshAllowed() {
+		return Applied{}, errors.New("Обновление подписок временно недоступно.")
+	}
+	if _, err := a.Store.Load(); err != nil {
+		return Applied{}, err
+	}
+	if a.Store.revision != pending.baseline {
+		return Applied{}, errors.New("Профили изменились после просмотра. Получи новый просмотр обновления.")
+	}
+	metadata := pending.candidate.SubscriptionMetadata[pending.group]
+	metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	pending.candidate.SubscriptionMetadata[pending.group] = metadata
+	if err := a.Store.Save(pending.candidate); err != nil {
+		return Applied{}, err
+	}
+	return Applied{Document: pending.candidate, Added: pending.added, Updated: pending.updated, Removed: pending.removed,
+		Duplicates: pending.duplicates, Skipped: pending.skipped, Batch: true}, nil
 }
 
 func (a *Application) apply(batch ImportResult, source, group string) (Applied, error) {
@@ -93,6 +342,7 @@ func (a *Application) apply(batch ImportResult, source, group string) (Applied, 
 		r.Updated = merged.Updated
 		r.Removed = merged.Removed
 		d.SubscriptionSources[group] = source
+		recordSubscriptionMetadata(&d, group, batch.Metadata)
 	} else {
 		seen := map[string]bool{}
 		for _, p := range d.Profiles {
@@ -234,6 +484,7 @@ func (a *Application) Prepare(ctx context.Context, id string) (Applied, error) {
 		return r, e
 	}
 	d.Profiles = merged.Profiles
+	recordSubscriptionMetadata(&d, selected.Group, batch.Metadata)
 	if e = a.Store.Save(d); e != nil {
 		return r, e
 	}
@@ -358,6 +609,17 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return Merge(r.Existing, r.Incoming, r.Group)
 	case "subscription.apply":
 		return a.apply(ImportResult{Profiles: r.Incoming}, r.Source, r.Group)
+	case "subscription.list":
+		return a.subscriptionList()
+	case "subscription.refresh.preview":
+		return a.refreshPreview(ctx, r.Group)
+	case "subscription.refresh.apply":
+		return a.applyRefresh(r.Token)
+	case "subscription.refresh.cancel":
+		if a.pendingPreview != nil && r.Token != "" && r.Token == a.pendingPreview.token {
+			a.pendingPreview = nil
+		}
+		return nil, nil
 	case "subscription.prepare":
 		return a.Prepare(ctx, r.ID)
 	case "group.check":

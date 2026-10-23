@@ -33,6 +33,13 @@ For Windows production-tag tests and vet, use the exact tags in .github/workflow
 Core CI does not require .NET, UI assets or a Windows application checkout.
 No release or artifact publication is performed by this workflow.
 
+SUBSCRIPTION CHECKS
+Portable profile tests cover bounded provider metadata and HTTPS download limits.
+Windows profile tests use isolated DPAPI stores, controlled trusted TLS servers,
+and framed API1 requests to check preview/apply/cancel, conflicts and privacy.
+They do not change the installed service, real profiles, routes, DNS or WFP.
+Manual subscription refresh runs in the user host; this feature needs no service update.
+
 PORTABLE FOUNDATION
 The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
 go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles

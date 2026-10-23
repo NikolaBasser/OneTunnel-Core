@@ -19,18 +19,26 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rivo/uniseg"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"github.com/rivo/uniseg"
 )
 
 const MaxBytes = 4 * 1024 * 1024
 
 type Profile = control.Profile
+type SubscriptionMetadata struct {
+	Upload    *uint64
+	Download  *uint64
+	Total     *uint64
+	Expire    *uint64
+	UpdatedAt string
+}
 type ImportResult struct {
 	Profiles   []Profile
 	Duplicates int
 	Skipped    int
+	Metadata   *SubscriptionMetadata
 }
 type MergeResult struct {
 	Profiles []Profile

@@ -15,10 +15,11 @@ import (
 )
 
 type Document struct {
-	Version             int
-	Profiles            []Profile
-	CollapsedGroups     []string
-	SubscriptionSources map[string]string
+	Version              int
+	Profiles             []Profile
+	CollapsedGroups      []string
+	SubscriptionSources  map[string]string
+	SubscriptionMetadata map[string]SubscriptionMetadata `json:",omitempty"`
 }
 type Store struct {
 	Root     string
@@ -191,6 +192,11 @@ func (s *Store) load() (Document, error) {
 			delete(d.SubscriptionSources, group)
 		}
 	}
+	for group := range d.SubscriptionMetadata {
+		if _, ok := d.SubscriptionSources[group]; !ok {
+			delete(d.SubscriptionMetadata, group)
+		}
+	}
 	s.revision = sha256.Sum256(encrypted)
 	s.loaded = true
 	return d, nil
@@ -232,6 +238,11 @@ func (s *Store) Save(d Document) error {
 			delete(d.SubscriptionSources, group)
 		} else if !SecureURL(source) {
 			return ErrImport
+		}
+	}
+	for group := range d.SubscriptionMetadata {
+		if !groups[group] || d.SubscriptionSources[group] == "" {
+			delete(d.SubscriptionMetadata, group)
 		}
 	}
 	data, e := json.Marshal(d)
