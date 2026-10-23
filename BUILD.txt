@@ -1,0 +1,22 @@
+OneTunnel core: independent Windows amd64 bundle
+
+Requirements: Git checkout, PowerShell 5.1 or later, Go 1.27.3, and module dependencies.
+Prepare the toolchain and module cache explicitly. This build does not download a
+toolchain, invoke .NET, read UI assets, install a service, or change networking.
+Go may download missing modules through the configured module proxy as normal.
+
+From any directory:
+  powershell -NoProfile -File <core>/build.ps1 -Output <new-empty-output> -GoExecutable <go.exe>
+
+The bundle contains OneTunnel.Profiles.exe and service/OneTunnel.Service.exe,
+the pinned Cronet DLL, legal notices, runtime metadata, and core-bundle.json.
+The manifest records the Git revision, dirty state, API version, target and file
+checksums. Dirty builds are identified, not disguised as reproducible releases.
+
+Only windows/amd64 is supported by this complete bundle. Windows ARM64 lacks a
+verified native Cronet dependency here; Linux service and profile-host adapters
+do not exist yet. Portable-package checks do not imply full runtime support.
+
+Consume only trusted bundle inputs. Manifest hashes detect corruption and file
+substitution relative to that manifest; they do not authenticate its publisher.
+No binaries are executed as part of build-boundary validation.

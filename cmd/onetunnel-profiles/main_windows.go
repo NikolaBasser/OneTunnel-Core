@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"golang.org/x/sys/windows"
 	"io"
+	"onetunnel/core/internal/buildinfo"
 	"onetunnel/core/internal/control"
 	"onetunnel/core/internal/platform"
 	"onetunnel/core/internal/profiles"
@@ -13,6 +15,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Printf("OneTunnel Go profile host %s; control API %d; revision %s; dirty %s\n", buildinfo.Version, control.Version, buildinfo.Revision, buildinfo.Dirty)
+		return
+	}
 	path, e := os.Executable()
 	if e != nil {
 		os.Exit(1)

@@ -141,21 +141,20 @@ func (t trafficLock) configure(interfaceName string, enginePaths []string, repla
 	defer wCall("FwpmEngineClose0", uintptr(h))
 	providerKey := t.key("provider")
 	subKey := t.key("sublayer")
-	var found uintptr
-	e = wCall("FwpmProviderGetByKey0", uintptr(h), uintptr(unsafe.Pointer(&providerKey)), uintptr(unsafe.Pointer(&found)))
+	var existingProvider *wProvider
+	e = wCall("FwpmProviderGetByKey0", uintptr(h), uintptr(unsafe.Pointer(&providerKey)), uintptr(unsafe.Pointer(&existingProvider)))
 	if e == nil {
-		provider := (*wProvider)(unsafe.Pointer(found))
 		owner := t.ownerHash()
-		matches := provider.Data.Size == 32 && provider.Data.Data != nil
+		matches := existingProvider.Data.Size == 32 && existingProvider.Data.Data != nil
 		if matches {
-			for i, v := range unsafe.Slice(provider.Data.Data, 32) {
+			for i, v := range unsafe.Slice(existingProvider.Data.Data, 32) {
 				if v != owner[i] {
 					matches = false
 					break
 				}
 			}
 		}
-		wCall("FwpmFreeMemory0", uintptr(unsafe.Pointer(&found)))
+		wCall("FwpmFreeMemory0", uintptr(unsafe.Pointer(&existingProvider)))
 		if !replace || !matches {
 			return errors.New("existing traffic protection requires recovery")
 		}

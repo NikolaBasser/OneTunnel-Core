@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+	"onetunnel/core/internal/buildinfo"
 	"onetunnel/core/internal/control"
 	"onetunnel/core/internal/platform"
 )
@@ -20,7 +21,7 @@ type service struct{ owner, directory string }
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println("OneTunnel Go core 0.3.1 · control API 1 · embedded Windows runtime")
+		fmt.Printf("OneTunnel Go core %s; control API %d; revision %s; dirty %s; embedded Windows runtime\n", buildinfo.Version, control.Version, buildinfo.Revision, buildinfo.Dirty)
 		return
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
