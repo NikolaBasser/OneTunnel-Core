@@ -125,14 +125,19 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 	if NetworkOptionsEmpty(network) {
 		return CompileWithOptions(source, kind, tun, localPort, bridgePort, xrayPath, transport)
 	}
-	if !tun || kind < 2 || kind > MaxKind {
+	if !tun || kind < 0 || kind > MaxKind {
 		return Plan{}, ErrConfiguration
 	}
 	normalized, err := NormalizeNetworkOptions(network)
 	if err != nil {
 		return Plan{}, err
 	}
-	p, err := CompileWithOptions(source, kind, tun, localPort, bridgePort, xrayPath, transport)
+	var p Plan
+	if kind < 2 {
+		p, err = nativePolicyPlan(source, kind, localPort, transport, normalized)
+	} else {
+		p, err = CompileWithOptions(source, kind, tun, localPort, bridgePort, xrayPath, transport)
+	}
 	if err != nil {
 		return Plan{}, err
 	}

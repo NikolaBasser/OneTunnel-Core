@@ -329,7 +329,7 @@ func (r *Runtime) poll() {
 	}
 	failed := false
 	if r.session.Kind == "proxy" {
-		failed = childExited(r.engine) || childExited(r.xray) || embeddedExited(r.embeddedXray) || embeddedExited(r.embeddedProxy)
+		failed = childExited(r.engine) || childExited(r.xray) || embeddedExited(r.embeddedXray) || embeddedExited(r.embeddedProxy) || sharedNativeExited(r.embeddedProxy)
 		if !failed && r.session.FullDevice && fullDeviceEmbeddingEnabled() {
 			v4, e4 := routeInterface("1.1.1.1")
 			v6, e6 := routeInterface("2606:4700:4700::1111")
@@ -565,8 +565,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if err = protocol.CheckEngineCompatibility(p.Source, p.Protocol); err != nil {
 		return err
 	}
+	sharedNative := p.Protocol < 2 && request.FullDevice && !protocol.NetworkOptionsEmpty(p.Network)
 	local, bridge := 0, 0
-	if p.Protocol >= 2 {
+	if p.Protocol >= 2 || sharedNative {
 		local, err = freePort()
 		if err != nil {
 			return err
@@ -592,7 +593,25 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if err != nil {
 		return err
 	}
+	if plan.SharedNative != sharedNative {
+		return protocol.ErrConfiguration
+	}
+	if sharedNative {
+		if !sharedNativeAvailable() {
+			return errors.New("shared native policy requires embedded AWG, sing-box and TUN")
+		}
+		if err = validateEmbeddedSharedNative([]byte(plan.Proxy)); err != nil {
+			return err
+		}
+		plan.NativeSource, err = pinNativeEndpoints(ctx, plan.NativeSource)
+		if err != nil {
+			return err
+		}
+	}
 	engine := r.enginePath(p.Protocol)
+	if sharedNative {
+		engine = r.enginePath(2)
+	}
 	if (p.Protocol < 2 && !embeddedAWGEnabled()) || (p.Protocol >= 2 && !embeddedSingBoxAllowed(request.FullDevice, plan.AccurateTime)) {
 		if _, err = os.Stat(engine); err != nil {
 			return err
@@ -603,7 +622,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			return err
 		}
 	}
-	native := p.Protocol < 2
+	native := p.Protocol < 2 && !sharedNative
 	tunnel := "OneTunnel" + strings.ReplaceAll(strings.ToLower(p.ID), "-", "")[:12]
 	extension := ".json"
 	kind := "proxy"
@@ -767,7 +786,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		}
 		if request.FullDevice || r.forceSecureBootstrap {
 			jObject(c["log"])["level"] = "info"
-			if !plan.NeedsXray {
+			if !plan.NeedsXray && !sharedNative {
 				out := first(c["outbounds"])
 				out["server"], err = resolveEndpoint(ctx, jString(out["server"]))
 				if err != nil {
@@ -785,7 +804,11 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			if marshalErr != nil {
 				return marshalErr
 			}
-			r.embeddedProxy, err = startEmbeddedSingBox(data, request.FullDevice)
+			if sharedNative {
+				r.embeddedProxy, err = startEmbeddedSharedNative(ctx, plan.NativeSource, p.Protocol, data)
+			} else {
+				r.embeddedProxy, err = startEmbeddedSingBox(data, request.FullDevice)
+			}
 			clear(data)
 			if err != nil {
 				return err
@@ -823,6 +846,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		}
 		if err = waitPort(ctx, r.engine, local); err != nil {
 			return err
+		}
+		if embeddedExited(r.embeddedProxy) || sharedNativeExited(r.embeddedProxy) {
+			return errors.New("shared TUN component exited during startup")
 		}
 		if request.FullDevice {
 			var engineDone <-chan struct{}
@@ -1169,6 +1195,12 @@ func (r *Runtime) probe(ctx context.Context) (string, error) {
 					return "", errors.New("full IPv6 route missing")
 				}
 			}
+		}
+		if s.FullDeviceMode && hasSharedNativeTransport(r.embeddedProxy) {
+			if e := r.connectionHealth(ctx); e != nil {
+				return "", e
+			}
+			return "Encrypted DNS through the configured AWG/WireGuard transport works. This does not verify public Internet access or the absence of DNS/IPv6 leaks.", nil
 		}
 		if s.FullDeviceMode && r.session.Kind == "proxy" && (r.embeddedProxy != nil || r.embeddedXray != nil) {
 			// This service is an explicit WFP transport exception. A direct HTTP

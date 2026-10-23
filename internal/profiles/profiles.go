@@ -208,6 +208,11 @@ func Validate(p Profile) error {
 	if e := protocol.ValidateNetworkOptions(p.Network, p.Protocol, true); e != nil {
 		return ErrImport
 	}
+	if p.Protocol < 2 && !protocol.NetworkOptionsEmpty(p.Network) {
+		if _, e := protocol.CompileWithNetwork(p.Source, p.Protocol, true, 18001, 18002, "unused", p.Transport, p.Network); e != nil {
+			return ErrImport
+		}
+	}
 	return nil
 }
 func Identity(p Profile) (string, error) {

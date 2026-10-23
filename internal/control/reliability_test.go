@@ -87,7 +87,10 @@ func TestFallbackRequiresEquivalentNetworkPolicy(t *testing.T) {
 	}
 	native := primary
 	native.Protocol = 1
-	if Validate(Request{Version: Version, Command: "check-profile", Profile: &native}) == "" {
-		t.Fatal("config-only check accepted policy on native tunnel")
+	if Validate(Request{Version: Version, Command: "check-profile", Profile: &native}) != "" {
+		t.Fatal("config-only check rejected native shared policy contract")
+	}
+	if Validate(Request{Version: Version, Command: "start", Profile: &native}) == "" {
+		t.Fatal("local-mode start accepted native policy")
 	}
 }

@@ -109,8 +109,8 @@ rules choose proxy, direct or reject; unmatched traffic stays proxied. Direct ru
 are intentional exceptions to VPN routing, not an automatic LAN bypass. Custom
 DoH/DoT uses a literal resolver IP, verified TLS identity and proxy detour. Upstream
 server-name bootstrap uses the fixed encrypted infrastructure path, separately
-from the custom tunneled resolver. Native AWG/WG retain imported DNS/AllowedIPs;
-new policies and local proxy mode are incompatible and rejected. A matching new
+from the custom tunneled resolver. Native AWG/WG with empty preferences retain imported DNS/AllowedIPs;
+nonempty full-device policies use the shared TUN; local mode is rejected. A matching new
 service build is required; an old strict service refuses unsupported fields.
 
 Portable backups use password-derived authenticated encryption and include profile,
@@ -127,12 +127,12 @@ Shared-TUN proxy policies support up to eight additional encrypted resolvers and
 DoH/DoT endpoints routed through the proxy; the default resolver remains final.
 An opt-in LAN exception sends only RFC1918 IPv4 and IPv6 ULA directly after
 explicit user rules. It defaults off, does not exclude OS routes, and never
-removes persistent traffic protection. Native AWG/WG remain configuration-driven.
+removes persistent traffic protection. Native AWG/WG without network preferences remain configuration-driven.
 
 Connection statistics come from the embedded engine and reset for each successful
 connection attempt, including reconnect/fallback. Local-proxy payload includes
 connection checks. Whole-device proxy totals count TUN payload and fast-flow
-packet bytes; native AWG/WG totals are transport counters. Rates are unavailable
+packet bytes; legacy native AWG/WG totals are transport counters. Rates are unavailable
 until two samples exist. These are not provider billing counters. Older services
 without statistics remain supported and show no fabricated totals. Diagnostics
 classify typed failures by bounded stage/category; unsupported authentication
@@ -159,3 +159,13 @@ latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
 Saved shared-TUN DNS/routing policies are validated, then left unapplied during
 the local server check; infrastructure endpoint bootstrap stays encrypted.
 Native WG/AWG group checks remain configuration-only and do not report latency.
+
+AWG/WireGuard with nonempty full-device network preferences use the shared TUN
+and an in-process AWG userspace transport. This mode supports TCP/UDP, preserves
+peer AllowedIPs and replaces imported DNS with the configured encrypted policy
+resolver. Uncovered destinations fail closed; direct routing requires an explicit
+rule. ICMP is unavailable in this mode. Empty preferences preserve legacy native
+routing, DNS and ICMP. Resolver addresses must fit peer coverage/address families.
+Native policy health checks an uncached encrypted DNS exchange rather than public
+HTTPS; success does not certify arbitrary public access or absence of leaks.
+Shared-native statistics use TUN ingress scope, without adding AWG wire counters.

@@ -118,7 +118,7 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 		if profile.ID != id {
 			continue
 		}
-		view.Supported = profile.Protocol >= 2 && profile.Protocol <= protocol.MaxKind
+		view.Supported = profile.Protocol >= 0 && profile.Protocol <= protocol.MaxKind
 		view.CanSave = view.CanSave && view.Supported
 		if dns := profile.Network; dns != nil {
 			view.AllowLAN = dns.AllowLAN
@@ -144,7 +144,9 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 			}
 		}
 		if !view.Supported {
-			view.Message = "Network preferences are available for proxy profiles in full-device mode."
+			view.Message = "Network preferences require a supported full-device profile."
+		} else if profile.Protocol < 2 {
+			view.Message = "Nonempty preferences use the shared TUN for TCP/UDP in full-device mode. Policy DNS replaces imported DNS; peer AllowedIPs are preserved. ICMP is unavailable in this mode. Reset all preferences to restore the native path."
 		}
 		return view, nil
 	}
@@ -169,7 +171,7 @@ func (a *Application) saveNetworkPreferences(r Request) (Document, error) {
 		if doc.Profiles[i].ID != r.ID {
 			continue
 		}
-		if doc.Profiles[i].Protocol < 2 || doc.Profiles[i].Protocol > protocol.MaxKind {
+		if doc.Profiles[i].Protocol < 0 || doc.Profiles[i].Protocol > protocol.MaxKind {
 			return Document{}, protocol.ErrConfiguration
 		}
 		network, parseErr := r.NetworkInput.Parse()

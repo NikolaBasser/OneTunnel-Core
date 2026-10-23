@@ -164,7 +164,7 @@ func ValidateNetworkOptions(options *NetworkOptions, kind int, fullDevice bool) 
 	if NetworkOptionsEmpty(options) {
 		return nil
 	}
-	if !fullDevice || kind < 2 || kind > MaxKind {
+	if !fullDevice || kind < 0 || kind > MaxKind {
 		return ErrConfiguration
 	}
 	_, err := NormalizeNetworkOptions(options)

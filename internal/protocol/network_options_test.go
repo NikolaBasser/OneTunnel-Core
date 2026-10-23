@@ -152,8 +152,8 @@ func TestDNSResolverPolicyValidationAndClone(t *testing.T) {
 			t.Errorf("accepted invalid DNS policy: %+v", invalid)
 		}
 	}
-	if ValidateNetworkOptions(&NetworkOptions{Resolvers: []DNSOptions{baseResolver}}, 0, true) == nil {
-		t.Fatal("native protocol accepted proxy DNS policy")
+	if ValidateNetworkOptions(&NetworkOptions{Resolvers: []DNSOptions{baseResolver}}, 0, false) == nil {
+		t.Fatal("native local mode accepted DNS policy")
 	}
 }
 
@@ -257,8 +257,8 @@ func TestNetworkPolicyCompilesForEveryProxyProtocol(t *testing.T) {
 		}
 	}
 	for _, kind := range []int{0, 1} {
-		if ValidateNetworkOptions(policy, kind, true) == nil {
-			t.Errorf("native protocol %d accepted proxy policy", kind)
+		if ValidateNetworkOptions(policy, kind, false) == nil {
+			t.Errorf("native protocol %d accepted local-mode policy", kind)
 		}
 	}
 }

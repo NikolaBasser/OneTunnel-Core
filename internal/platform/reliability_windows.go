@@ -55,8 +55,7 @@ func (r *Runtime) maintainConnection() {
 	defer cancel()
 	if !r.transportFailed && !r.retrying && r.session != nil {
 		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
-		port := r.snapshot().LocalPort
-		err := httpsCheck(probeCtx, port)
+		err := r.connectionHealth(probeCtx)
 		done()
 		r.retry.next = time.Now().Add(20 * time.Second)
 		if err == nil {
@@ -95,7 +94,7 @@ func (r *Runtime) maintainConnection() {
 	err := r.start(ctx, request)
 	if err == nil {
 		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
-		err = httpsCheck(probeCtx, r.snapshot().LocalPort)
+		err = r.connectionHealth(probeCtx)
 		done()
 	}
 	if err == nil {
@@ -161,12 +160,28 @@ func (r *Runtime) checkProfileWithProbeDirectory(ctx context.Context, p *control
 			text := string(data)
 			return &text, nil
 		}
+		if p.Protocol < 2 {
+			if err = validateEmbeddedSharedNative([]byte(plan.Proxy)); err != nil {
+				result.NetworkTest = false
+				result.Message = "Shared native DNS and routing configuration validation failed; no network check was started."
+				result.Milliseconds = time.Since(started).Milliseconds()
+				data, _ := json.Marshal(result)
+				text := string(data)
+				return &text, nil
+			}
+		}
 		localProfile.Network = nil
 	}
 	if p.Protocol < 2 {
-		_, err := protocol.CompileWithNetwork(p.Source, p.Protocol, false, 18001, 18002, "unused", p.Transport, p.Network)
+		var err error
+		if !policyValidated {
+			_, err = protocol.CompileWithNetwork(p.Source, p.Protocol, false, 18001, 18002, "unused", p.Transport, p.Network)
+		}
 		result.Success = err == nil
 		result.Message = "Configuration validated; native WG/AWG connectivity is checked during connection."
+		if policyValidated {
+			result.Message = "Native source and shared DNS/routing configuration validated only; no native engine, OS adapter or network probe was started."
+		}
 		if err != nil {
 			result.Message = "Invalid configuration."
 		}
