@@ -112,3 +112,12 @@ server-name bootstrap uses the fixed encrypted infrastructure path, separately
 from the custom tunneled resolver. Native AWG/WG retain imported DNS/AllowedIPs;
 new policies and local proxy mode are incompatible and rejected. A matching new
 service build is required; an old strict service refuses unsupported fields.
+
+Portable backups use password-derived authenticated encryption and include profile,
+network, favorite, group and subscription settings. Restore previews a complete
+library replacement and requires explicit confirmation; enabled subscription
+schedules are restored only with a separate opt-in. Runtime/protection state and
+machine-specific consent are excluded. Existing backup files are never overwritten.
+Optional per-subscription schedules run only while the user app is open, default
+off, wait their configured interval and prepare a review instead of applying it.
+Tray profile selection uses the Go projection and never starts a connection.

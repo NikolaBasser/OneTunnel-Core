@@ -112,3 +112,16 @@ bundled service explicitly before using them; preview startup never updates it.
 Domain matching depends on observed DNS/SNI and process matching on Windows process
 attribution; private application DoH/ECH can reduce domain visibility. A config
 validation test does not prove live routing correctness or absence of DNS leaks.
+
+BACKUP, SCHEDULES AND TRAY PROFILES
+Use Backup in the service/settings view to export to a NEW .otbackup filename.
+Use a strong password of at least12 UTF-8 bytes; no password is stored. Restore
+shows counts and replaces the entire local library only after confirmation.
+Enabled subscription schedules require a separate restore opt-in, off by default.
+Restore preview tokens expire after10 minutes; cleanup is lazy on Go requests and
+host close. Memory clearing is best effort, not guaranteed string-memory erasure.
+Saved subscriptions can prepare change previews every15..10080 minutes while the
+app is open; they never silently apply. Turning a schedule off keeps its interval.
+Use the tray profile submenu to select a profile without connecting. Up to50
+profiles are shown; use the main window for the rest. No service update is needed
+for these user-host features. These features do not alter networking automatically.

@@ -92,6 +92,10 @@ func (a *Application) renameGroup(group, name, token string) (Document, error) {
 		delete(doc.SubscriptionMetadata, group)
 		doc.SubscriptionMetadata[name] = metadata
 	}
+	if schedule, exists := doc.SubscriptionSchedules[group]; exists {
+		delete(doc.SubscriptionSchedules, group)
+		doc.SubscriptionSchedules[name] = schedule
+	}
 	wasCollapsed := false
 	for _, current := range doc.CollapsedGroups {
 		wasCollapsed = wasCollapsed || current == group
@@ -138,6 +142,7 @@ func (a *Application) deleteGroup(group, token string) (Document, error) {
 	doc.Profiles = kept
 	delete(doc.SubscriptionSources, group)
 	delete(doc.SubscriptionMetadata, group)
+	delete(doc.SubscriptionSchedules, group)
 	collapsed := make([]string, 0, len(doc.CollapsedGroups))
 	for _, current := range doc.CollapsedGroups {
 		if current != group {

@@ -21,35 +21,38 @@ import (
 )
 
 type Request struct {
-	Reliability    *control.ReliabilityOptions
-	Version        int
-	Command        string
-	Name           string
-	Source         string
-	Group          string
-	Subscription   bool
-	Expanded       bool
-	Requested      *int
-	Profile        *Profile
-	Existing       []Profile
-	Incoming       []Profile
-	Document       *Document
-	ID             string
-	Token          string
-	Transport      *protocol.TransportOptions
-	Data           []byte
-	Encrypt        bool
-	Path           string
-	FullDevice     bool
-	Favorite       bool
-	FavoritesOnly  bool
-	Sort           string
-	Filter         string
-	TransportInput *TransportInput
-	NetworkInput   *NetworkInput
-	Observation    *platform.ServiceObservation
-	Context        *DesktopContext
-	Retained       *DesktopReply
+	Reliability      *control.ReliabilityOptions
+	Version          int
+	Command          string
+	Name             string
+	Source           string
+	Group            string
+	Subscription     bool
+	Expanded         bool
+	Requested        *int
+	Profile          *Profile
+	Existing         []Profile
+	Incoming         []Profile
+	Document         *Document
+	ID               string
+	Token            string
+	Transport        *protocol.TransportOptions
+	Data             []byte
+	Encrypt          bool
+	Path             string
+	FullDevice       bool
+	Favorite         bool
+	FavoritesOnly    bool
+	Sort             string
+	Filter           string
+	TransportInput   *TransportInput
+	NetworkInput     *NetworkInput
+	Password         string
+	RestoreSchedules bool
+	Schedule         *SubscriptionSchedule
+	Observation      *platform.ServiceObservation
+	Context          *DesktopContext
+	Retained         *DesktopReply
 }
 type Applied struct {
 	Document   Document
@@ -84,6 +87,10 @@ type Application struct {
 	desktopRetired  map[string]bool
 	pendingPreview  *pendingSubscriptionPreview
 	groupResults    *completedGroupResults
+	Now             func() time.Time
+	scheduleNext    map[string]scheduledSubscriptionDue
+	scheduleLastNow time.Time
+	backupPreview   *pendingBackupRestore
 }
 
 type pendingSubscriptionPreview struct {
@@ -188,6 +195,13 @@ func (a *Application) refreshAllowed() bool {
 	return !existsProfileFile(a.Store.Root, "session.json") && !existsProfileFile(a.Store.Root, "kill-switch.json")
 }
 
+func (a *Application) now() time.Time {
+	if a != nil && a.Now != nil {
+		return a.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
 func (a *Application) subscriptionList() ([]SubscriptionSummary, error) {
 	d, err := a.Store.Load()
 	if err != nil {
@@ -284,7 +298,7 @@ func (a *Application) refreshPreview(ctx context.Context, group string) (Subscri
 		return SubscriptionPreview{}, errors.New("Не удалось подготовить просмотр обновления.")
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes[:])
-	expires := time.Now().UTC().Add(10 * time.Minute)
+	expires := a.now().Add(10 * time.Minute)
 	usage, expiry := metadataDisplay(d.SubscriptionMetadata[group])
 	pending := &pendingSubscriptionPreview{token: token, group: group, baseline: baseline, candidate: d, expires: expires,
 		added: merged.Added, updated: merged.Updated, removed: merged.Removed, duplicates: batch.Duplicates, skipped: batch.Skipped}
@@ -307,7 +321,7 @@ func (a *Application) applyRefresh(token string) (Applied, error) {
 		return Applied{}, errors.New("Просмотр обновления недействителен. Получи новый.")
 	}
 	a.pendingPreview = nil
-	if time.Now().After(pending.expires) {
+	if !a.now().Before(pending.expires) {
 		return Applied{}, errors.New("Срок просмотра обновления истёк. Получи новый.")
 	}
 	if !a.refreshAllowed() {
@@ -320,7 +334,7 @@ func (a *Application) applyRefresh(token string) (Applied, error) {
 		return Applied{}, errors.New("Профили изменились после просмотра. Получи новый просмотр обновления.")
 	}
 	metadata := pending.candidate.SubscriptionMetadata[pending.group]
-	metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	metadata.UpdatedAt = a.now().Format(time.RFC3339)
 	pending.candidate.SubscriptionMetadata[pending.group] = metadata
 	if err := a.Store.Save(pending.candidate); err != nil {
 		return Applied{}, err
@@ -527,6 +541,7 @@ func (a *Application) Prepare(ctx context.Context, id string) (Applied, error) {
 	return r, nil
 }
 func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
+	a.expireBackupRestore()
 	if r.Version != 1 {
 		return nil, errors.New("Несовместимая версия ядра профилей. Используй полную новую сборку.")
 	}
@@ -572,6 +587,28 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 			return nil, err
 		}
 		return report, nil
+	case "backup.export":
+		return a.exportBackup(r.Path, r.Password)
+	case "backup.restore.preview":
+		return a.previewBackupRestore(r.Path, r.Password)
+	case "backup.restore.apply":
+		return a.applyBackupRestore(r.Token, r.RestoreSchedules)
+	case "backup.restore.cancel":
+		a.clearBackupRestore(r.Token)
+		return nil, nil
+	case "subscription.schedule.view":
+		return a.scheduleView(r.Group)
+	case "subscription.schedule.save":
+		if r.Schedule == nil {
+			return nil, ErrImport
+		}
+		return a.saveSchedule(r.Group, r.Token, *r.Schedule)
+	case "subscription.schedule.tick":
+		return a.scheduleTick(ctx)
+	case "tray.profiles.view":
+		return a.trayProfilesView()
+	case "tray.profiles.select":
+		return a.traySelect(r.ID, r.Token)
 	case "desktop.context", "desktop.observe", "desktop.unavailable":
 		return a.desktopProjectionCommand(r)
 	case "editor.load":

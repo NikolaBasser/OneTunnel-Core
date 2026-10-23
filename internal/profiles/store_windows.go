@@ -16,12 +16,13 @@ import (
 )
 
 type Document struct {
-	Version              int
-	Profiles             []Profile
-	FavoriteIDs          []string `json:",omitempty"`
-	CollapsedGroups      []string
-	SubscriptionSources  map[string]string
-	SubscriptionMetadata map[string]SubscriptionMetadata `json:",omitempty"`
+	Version               int
+	Profiles              []Profile
+	FavoriteIDs           []string `json:",omitempty"`
+	CollapsedGroups       []string
+	SubscriptionSources   map[string]string
+	SubscriptionMetadata  map[string]SubscriptionMetadata `json:",omitempty"`
+	SubscriptionSchedules map[string]SubscriptionSchedule `json:",omitempty"`
 }
 type Store struct {
 	Root     string
@@ -204,6 +205,7 @@ func (s *Store) load() (Document, error) {
 			delete(d.SubscriptionMetadata, group)
 		}
 	}
+	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
 	s.revision = sha256.Sum256(encrypted)
 	s.loaded = true
@@ -248,6 +250,11 @@ func (s *Store) Save(d Document) error {
 		groups[p.Group] = true
 	}
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
+	for _, schedule := range d.SubscriptionSchedules {
+		if !validSchedule(schedule) {
+			return ErrImport
+		}
+	}
 	for group, source := range d.SubscriptionSources {
 		if !groups[group] {
 			delete(d.SubscriptionSources, group)
@@ -260,6 +267,7 @@ func (s *Store) Save(d Document) error {
 			delete(d.SubscriptionMetadata, group)
 		}
 	}
+	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
 	data, e := json.Marshal(d)
 	if e != nil || len(data) > 32*1024*1024 {
 		return ErrImport
