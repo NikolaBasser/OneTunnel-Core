@@ -9,12 +9,14 @@ import (
 )
 
 type NetworkPreferencesView struct {
-	ID, Token, Message, Mode, ServerIP, ServerName, Port, Path, RulesText string
-	Supported, CanSave                                                    bool
+	ID, Token, Message, Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
+	AllowLAN                                                                                           bool
+	Supported, CanSave                                                                                 bool
 }
 
 type NetworkInput struct {
-	Mode, ServerIP, ServerName, Port, Path, RulesText string
+	Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
+	AllowLAN                                                                       bool
 }
 
 func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
@@ -23,6 +25,7 @@ func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 		return nil, protocol.ErrConfiguration
 	}
 	options := &protocol.NetworkOptions{}
+	options.AllowLAN = input.AllowLAN
 	if mode != "default" {
 		port := 0
 		if strings.TrimSpace(input.Port) != "" {
@@ -52,6 +55,53 @@ func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 			}
 		}
 	}
+	if strings.TrimSpace(input.ResolversText) != "" {
+		for _, raw := range strings.Split(input.ResolversText, "\n") {
+			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) != 5 {
+				return nil, protocol.ErrConfiguration
+			}
+			port := 0
+			if strings.TrimSpace(parts[3]) != "" {
+				parsed, err := strconv.Atoi(strings.TrimSpace(parts[3]))
+				if err != nil {
+					return nil, protocol.ErrConfiguration
+				}
+				port = parsed
+			}
+			options.Resolvers = append(options.Resolvers, protocol.DNSOptions{
+				Transport: strings.TrimSpace(parts[0]), ServerIP: strings.TrimSpace(parts[1]),
+				ServerName: strings.TrimSpace(parts[2]), Port: port, Path: strings.TrimSpace(parts[4]),
+			})
+			if len(options.Resolvers) > protocol.MaxDNSResolvers {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+	}
+	if strings.TrimSpace(input.DNSRulesText) != "" {
+		for _, raw := range strings.Split(input.DNSRulesText, "\n") {
+			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) != 3 {
+				return nil, protocol.ErrConfiguration
+			}
+			resolver, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+			if err != nil || resolver < 1 {
+				return nil, protocol.ErrConfiguration
+			}
+			options.DNSRules = append(options.DNSRules, protocol.DNSRule{Kind: strings.TrimSpace(parts[0]), Value: strings.TrimSpace(parts[1]), ResolverIndex: resolver - 1})
+			if len(options.DNSRules) > protocol.MaxDNSRules {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+	}
 	return protocol.NormalizeNetworkOptions(options)
 }
 
@@ -71,6 +121,7 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 		view.Supported = profile.Protocol >= 2 && profile.Protocol <= protocol.MaxKind
 		view.CanSave = view.CanSave && view.Supported
 		if dns := profile.Network; dns != nil {
+			view.AllowLAN = dns.AllowLAN
 			if dns.DNS != nil {
 				view.Mode, view.ServerIP, view.ServerName = dns.DNS.Transport, dns.DNS.ServerIP, dns.DNS.ServerName
 				if dns.DNS.Port != 0 {
@@ -80,6 +131,16 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 			}
 			for _, rule := range dns.Rules {
 				view.RulesText += rule.Kind + " | " + rule.Action + " | " + rule.Value + "\n"
+			}
+			for _, resolver := range dns.Resolvers {
+				port := ""
+				if resolver.Port != 0 {
+					port = strconv.Itoa(resolver.Port)
+				}
+				view.ResolversText += resolver.Transport + " | " + resolver.ServerIP + " | " + resolver.ServerName + " | " + port + " | " + resolver.Path + "\n"
+			}
+			for _, rule := range dns.DNSRules {
+				view.DNSRulesText += rule.Kind + " | " + rule.Value + " | " + strconv.Itoa(rule.ResolverIndex+1) + "\n"
 			}
 		}
 		if !view.Supported {

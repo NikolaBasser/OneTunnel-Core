@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -139,13 +140,39 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 	if err != nil {
 		return Plan{}, ErrConfiguration
 	}
-	if normalized.DNS != nil {
-		dns := normalized.DNS
-		server := object{"type": dns.Transport, "tag": "remote-dns", "server": dns.ServerIP, "server_port": dns.Port, "detour": "proxy", "tls": object{"enabled": true, "server_name": dns.ServerName}}
-		if dns.Transport == "https" {
-			server["path"] = dns.Path
+	if kind == Naive {
+		// Naive requires an explicit resolver once the policy DNS registry has
+		// multiple transports. Use the same fixed-IP final resolver as all other
+		// unmatched lookups.
+		outbounds := arr(config["outbounds"])
+		if len(outbounds) == 0 {
+			return Plan{}, ErrConfiguration
 		}
-		config["dns"] = object{"servers": []any{server}, "final": "remote-dns"}
+		obj(outbounds[0])["domain_resolver"] = "remote-dns"
+	}
+	if normalized.DNS != nil {
+		config["dns"] = object{"servers": []any{dnsServer(*normalized.DNS, "remote-dns")}, "final": "remote-dns"}
+	}
+	if len(normalized.Resolvers) > 0 {
+		dns := obj(config["dns"])
+		servers := arr(dns["servers"])
+		dnsRules := make([]any, 0, len(normalized.DNSRules))
+		for i, resolver := range normalized.Resolvers {
+			tag := fmt.Sprintf("onetunnel-policy-dns-%d", i)
+			servers = append(servers, dnsServer(resolver, tag))
+		}
+		for _, rule := range normalized.DNSRules {
+			matcher := "domain"
+			if rule.Kind == "domain-suffix" {
+				matcher = "domain_suffix"
+			}
+			dnsRules = append(dnsRules, object{matcher: []any{rule.Value}, "action": "route", "server": fmt.Sprintf("onetunnel-policy-dns-%d", rule.ResolverIndex)})
+		}
+		dns["servers"] = servers
+		if len(dnsRules) > 0 {
+			dns["rules"] = dnsRules
+		}
+		config["dns"] = dns
 	}
 	route := obj(obj(config["route"]))
 	rules := arr(route["rules"])
@@ -187,16 +214,19 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 		}
 		rules = append(rules, entry)
 	}
-	if len(normalized.Rules) > 0 {
+	if normalized.AllowLAN {
+		rules = append(rules, object{"ip_cidr": []any{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}, "action": "route", "outbound": "direct"})
+	}
+	if len(normalized.Rules) > 0 || normalized.AllowLAN {
 		route["rules"] = rules
 	}
 	config["route"] = route
-	if hasDirectRule(normalized.Rules) {
+	if normalized.AllowLAN || hasDirectRule(normalized.Rules) {
 		outbounds := arr(config["outbounds"])
 		outbounds = append(outbounds, object{"type": "direct", "tag": "direct"})
 		config["outbounds"] = outbounds
 	}
-	if hasDomainRule(normalized.Rules) {
+	if hasDomainRule(normalized.Rules) || len(normalized.DNSRules) > 0 {
 		dns := obj(config["dns"])
 		dns["reverse_mapping"] = true
 		config["dns"] = dns
@@ -207,6 +237,14 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 	}
 	p.Proxy = string(data)
 	return p, nil
+}
+
+func dnsServer(dns DNSOptions, tag string) object {
+	server := object{"type": dns.Transport, "tag": tag, "server": dns.ServerIP, "server_port": dns.Port, "detour": "proxy", "tls": object{"enabled": true, "server_name": dns.ServerName}}
+	if dns.Transport == "https" {
+		server["path"] = dns.Path
+	}
+	return server
 }
 
 func windowsProcessRegex(path string) string { return `(?i)^` + regexp.QuoteMeta(path) + `$` }

@@ -42,7 +42,7 @@ func TestPortableBackupRoundTripsEveryProtocol(t *testing.T) {
 		p.ID = fmtTrayID(kind)
 		p.Group = "Manual"
 		if kind >= 2 {
-			p.Network = &protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "tls", ServerIP: "1.1.1.1", ServerName: "one.one.one.one"}, Rules: []protocol.NetworkRule{{Kind: "cidr", Value: "192.0.2.0/24", Action: "reject"}}}
+			p.Network = &protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "tls", ServerIP: "1.1.1.1", ServerName: "one.one.one.one"}, Rules: []protocol.NetworkRule{{Kind: "cidr", Value: "192.0.2.0/24", Action: "reject"}}, Resolvers: []protocol.DNSOptions{{Transport: "https", ServerIP: "8.8.8.8", ServerName: "dns.google"}}, DNSRules: []protocol.DNSRule{{Kind: "domain", Value: "synthetic.example", ResolverIndex: 0}}, AllowLAN: true}
 		}
 		profiles = append(profiles, p)
 	}

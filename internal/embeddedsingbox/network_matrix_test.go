@@ -61,7 +61,13 @@ func TestFullDevicePolicyMatrixWithoutNetworkChanges(t *testing.T) {
 	for kind, source := range sources {
 		for _, dnsMode := range []string{"https", "tls"} {
 			t.Run(strconv.Itoa(kind)+"/"+dnsMode, func(t *testing.T) {
-				policy := &protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: dnsMode, ServerIP: "1.1.1.1", ServerName: "dns.example"}, Rules: []protocol.NetworkRule{{Kind: "domain-suffix", Value: "example.com", Action: "proxy"}, {Kind: "cidr", Value: "192.0.2.0/24", Action: "direct"}, {Kind: "process", Value: `C:\Synthetic\blocked.exe`, Action: "reject"}}}
+				policy := &protocol.NetworkOptions{
+					DNS:       &protocol.DNSOptions{Transport: dnsMode, ServerIP: "1.1.1.1", ServerName: "dns.example"},
+					Resolvers: []protocol.DNSOptions{{Transport: dnsMode, ServerIP: "8.8.8.8", ServerName: "dns2.example"}},
+					DNSRules:  []protocol.DNSRule{{Kind: "domain-suffix", Value: "example.com", ResolverIndex: 0}},
+					Rules:     []protocol.NetworkRule{{Kind: "domain-suffix", Value: "example.com", Action: "proxy"}, {Kind: "cidr", Value: "10.0.0.0/8", Action: "reject"}, {Kind: "cidr", Value: "192.0.2.0/24", Action: "direct"}, {Kind: "process", Value: `C:\Synthetic\blocked.exe`, Action: "reject"}},
+					AllowLAN:  true,
+				}
 				plan, err := protocol.CompileWithNetwork(source, kind, true, 18111, 18112, `C:\Program Files\OneTunnel\OneTunnel.Service.exe`, nil, policy)
 				if err != nil {
 					t.Fatal(err)

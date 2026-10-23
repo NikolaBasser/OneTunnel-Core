@@ -365,6 +365,8 @@ func eraseDocument(doc *Document) {
 				*profile.Network.DNS = protocol.DNSOptions{}
 			}
 			clear(profile.Network.Rules)
+			clear(profile.Network.Resolvers)
+			clear(profile.Network.DNSRules)
 			*profile.Network = protocol.NetworkOptions{}
 		}
 		if profile.Transport != nil {

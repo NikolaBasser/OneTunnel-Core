@@ -11,9 +11,12 @@ import (
 )
 
 func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
-	parsed, err := (NetworkInput{Mode: "https", ServerIP: "1.1.1.1", ServerName: "DNS.Example", RulesText: "domain-suffix | direct | example.com\ncidr | reject | 192.0.2.4"}).Parse()
+	parsed, err := (NetworkInput{Mode: "https", ServerIP: "1.1.1.1", ServerName: "DNS.Example", RulesText: "domain-suffix | direct | example.com\ncidr | reject | 192.0.2.4", ResolversText: "https | 8.8.8.8 | dns.google |  |\ntls | 2001:4860:4860::8888 | dns.google | 853 |", DNSRulesText: "domain | example.com | 2\ndomain-suffix | sub.example.com | 1", AllowLAN: true}).Parse()
 	if err != nil || parsed.DNS.Port != 443 || parsed.DNS.Path != "/dns-query" || parsed.Rules[1].Value != "192.0.2.4/32" {
 		t.Fatalf("parse/defaults: %+v %v", parsed, err)
+	}
+	if len(parsed.Resolvers) != 2 || parsed.Resolvers[0].Path != "/dns-query" || parsed.Resolvers[1].Port != 853 || parsed.DNSRules[0].ResolverIndex != 1 || !parsed.AllowLAN {
+		t.Fatalf("additional DNS fields: %+v", parsed)
 	}
 	if _, err := (NetworkInput{Mode: "tls", ServerIP: "8.8.8.8", ServerName: "dns.example", Path: "/dns-query"}).Parse(); err == nil {
 		t.Fatal("DoT accepted a DoH path")
@@ -21,9 +24,19 @@ func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
 	if _, err := (NetworkInput{Mode: "default", ServerIP: "1.1.1.1"}).Parse(); err == nil {
 		t.Fatal("default mode accepted hidden custom DNS")
 	}
+	for _, input := range []NetworkInput{
+		{ResolversText: "https|8.8.8.8|dns.google|443"},
+		{ResolversText: "https|8.8.8.8|dns.google|bad|/dns-query"},
+		{ResolversText: "https|8.8.8.8|dns.google||", DNSRulesText: "domain|example.com|0"},
+	} {
+		if _, err := input.Parse(); err == nil {
+			t.Errorf("accepted malformed DNS input: %+v", input)
+		}
+	}
 
 	profile := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Profile", "Manual")
 	profile.Source = vless + "#SOURCE-SECRET-SENTINEL"
+	profile.Network = &protocol.NetworkOptions{Resolvers: []protocol.DNSOptions{{Transport: "https", ServerIP: "1.1.1.1", ServerName: "dns.example"}}, DNSRules: []protocol.DNSRule{{Kind: "domain-suffix", Value: "example.com", ResolverIndex: 0}}, AllowLAN: true}
 	store := managementStore(t, Document{Profiles: []Profile{profile}, FavoriteIDs: []string{profile.ID}})
 	app := &Application{Store: store, ServiceCall: func(context.Context, control.Request) (control.Response, int64, error) {
 		t.Fatal("network preferences called service")
@@ -48,15 +61,22 @@ func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
 	if err := json.Unmarshal(viewJSON, &viewObject); err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "Supported", "CanSave")
-	input := &NetworkInput{Mode: "tls", ServerIP: "8.8.8.8", ServerName: "dns.example", RulesText: "process | direct | C:\\Synthetic\\allowed.exe"}
+	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "ResolversText", "DNSRulesText", "AllowLAN", "Supported", "CanSave")
+	if view.ResolversText != "https | 1.1.1.1 | dns.example | 443 | /dns-query\n" || view.DNSRulesText != "domain-suffix | example.com | 1\n" || !view.AllowLAN {
+		t.Fatalf("DNS preferences view: %+v", view)
+	}
+	input := &NetworkInput{Mode: "tls", ServerIP: "8.8.8.8", ServerName: "dns.example", RulesText: "process | direct | C:\\Synthetic\\allowed.exe", ResolversText: "https | 1.1.1.1 | dns.example | |", DNSRulesText: "domain | example.com | 1", AllowLAN: true}
 	resultValue, err := app.Handle(context.Background(), Request{Version: 1, Command: "ui.network.preferences.save", ID: profile.ID, Token: view.Token, NetworkInput: input})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := resultValue.(Document)
-	if len(result.Profiles) != 1 || result.Profiles[0].Source != "" || result.Profiles[0].Network == nil || result.Profiles[0].Network.DNS.Port != 853 || result.Profiles[0].Network.Rules[0].Value != `c:\synthetic\allowed.exe` || len(result.FavoriteIDs) != 1 {
+	if len(result.Profiles) != 1 || result.Profiles[0].Source != "" || result.Profiles[0].Network == nil || result.Profiles[0].Network.DNS.Port != 853 || result.Profiles[0].Network.Rules[0].Value != `c:\synthetic\allowed.exe` || len(result.Profiles[0].Network.Resolvers) != 1 || result.Profiles[0].Network.DNSRules[0].ResolverIndex != 0 || !result.Profiles[0].Network.AllowLAN || len(result.FavoriteIDs) != 1 {
 		t.Fatalf("save response: %+v", result)
+	}
+	reloaded, err := store.Load()
+	if err != nil || !protocol.NetworkOptionsEquivalent(reloaded.Profiles[0].Network, result.Profiles[0].Network) {
+		t.Fatalf("saved DNS policy did not reload: %+v %v", reloaded, err)
 	}
 	encoded, _ := json.Marshal(result)
 	if strings.Contains(string(encoded), "SOURCE-SECRET-SENTINEL") {
@@ -78,26 +98,29 @@ func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
 
 func TestNetworkPolicyPreservedThroughMergeAndCopy(t *testing.T) {
 	first := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Profile", "Provider")
-	first.Network = &protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "https", ServerIP: "1.1.1.1", ServerName: "dns.example"}, Rules: []protocol.NetworkRule{{Kind: "domain", Action: "proxy", Value: "example.com"}}}
+	first.Network = &protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "https", ServerIP: "1.1.1.1", ServerName: "dns.example"}, Rules: []protocol.NetworkRule{{Kind: "domain", Action: "proxy", Value: "example.com"}}, Resolvers: []protocol.DNSOptions{{Transport: "tls", ServerIP: "8.8.8.8", ServerName: "dns.google"}}, DNSRules: []protocol.DNSRule{{Kind: "domain", Value: "example.com", ResolverIndex: 0}}, AllowLAN: true}
 	fresh := first
 	fresh.Name = "Renamed"
+	fresh.Network = nil
 	merged, err := Merge([]Profile{first}, []Profile{fresh}, first.Group)
-	if err != nil || merged.Profiles[0].Network == nil {
+	if err != nil || !protocol.NetworkOptionsEquivalent(merged.Profiles[0].Network, first.Network) {
 		t.Fatalf("merge did not preserve network policy: %+v %v", merged, err)
 	}
 	cloned := cloneOrganizationProfile(first)
-	if cloned.Network == first.Network || cloned.Network.DNS == first.Network.DNS || &cloned.Network.Rules[0] == &first.Network.Rules[0] {
+	if cloned.Network == first.Network || cloned.Network.DNS == first.Network.DNS || &cloned.Network.Rules[0] == &first.Network.Rules[0] || &cloned.Network.Resolvers[0] == &first.Network.Resolvers[0] || &cloned.Network.DNSRules[0] == &first.Network.DNSRules[0] {
 		t.Fatal("network policy copy shares mutable state")
 	}
 	cloned.Network.Rules[0].Value = "changed.example"
-	if first.Network.Rules[0].Value != "example.com" {
+	cloned.Network.Resolvers[0].ServerIP = "9.9.9.9"
+	cloned.Network.DNSRules[0].Value = "changed.example"
+	if first.Network.Rules[0].Value != "example.com" || first.Network.Resolvers[0].ServerIP != "8.8.8.8" || first.Network.DNSRules[0].Value != "example.com" {
 		t.Fatal("copy mutated original profile")
 	}
 }
 
 func TestEditorSavePreservesExistingNetworkPreferences(t *testing.T) {
 	profile := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Profile", "Manual")
-	profile.Network = &protocol.NetworkOptions{Rules: []protocol.NetworkRule{{Kind: "domain", Action: "reject", Value: "blocked.example"}}}
+	profile.Network = &protocol.NetworkOptions{Rules: []protocol.NetworkRule{{Kind: "domain", Action: "reject", Value: "blocked.example"}}, Resolvers: []protocol.DNSOptions{{Transport: "https", ServerIP: "1.1.1.1", ServerName: "dns.example"}}, DNSRules: []protocol.DNSRule{{Kind: "domain", Value: "blocked.example", ResolverIndex: 0}}, AllowLAN: true}
 	store := managementStore(t, Document{Profiles: []Profile{profile}})
 	app := &Application{Store: store}
 	if _, err := app.SaveEditor(context.Background(), Request{ID: profile.ID, Name: "Renamed", Group: profile.Group, Source: profile.Source}); err != nil {

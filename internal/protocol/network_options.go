@@ -3,16 +3,24 @@ package protocol
 import (
 	"net"
 	"net/netip"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
 )
 
-const MaxNetworkRules = 64
+const (
+	MaxNetworkRules = 64
+	MaxDNSResolvers = 8
+	MaxDNSRules     = 64
+)
 
 type NetworkOptions struct {
-	DNS   *DNSOptions
-	Rules []NetworkRule
+	DNS       *DNSOptions
+	Rules     []NetworkRule
+	Resolvers []DNSOptions `json:"Resolvers,omitempty"`
+	DNSRules  []DNSRule    `json:"DNSRules,omitempty"`
+	AllowLAN  bool         `json:"AllowLAN,omitempty"`
 }
 
 type DNSOptions struct {
@@ -29,10 +37,16 @@ type NetworkRule struct {
 	Action string
 }
 
+type DNSRule struct {
+	Kind          string `json:"Kind"`
+	Value         string `json:"Value"`
+	ResolverIndex int    `json:"ResolverIndex"`
+}
+
 var windowsProcessPath = regexp.MustCompile(`(?i)^[a-z]:\\`)
 
 func NetworkOptionsEmpty(options *NetworkOptions) bool {
-	return options == nil || options.DNS == nil && len(options.Rules) == 0
+	return options == nil || options.DNS == nil && len(options.Rules) == 0 && len(options.Resolvers) == 0 && len(options.DNSRules) == 0 && !options.AllowLAN
 }
 
 // CloneNetworkOptions detaches persisted preferences from the profile slice.
@@ -46,6 +60,8 @@ func CloneNetworkOptions(options *NetworkOptions) *NetworkOptions {
 		copy.DNS = &dns
 	}
 	copy.Rules = append([]NetworkRule(nil), options.Rules...)
+	copy.Resolvers = append([]DNSOptions(nil), options.Resolvers...)
+	copy.DNSRules = append([]DNSRule(nil), options.DNSRules...)
 	return &copy
 }
 
@@ -55,42 +71,39 @@ func NormalizeNetworkOptions(options *NetworkOptions) (*NetworkOptions, error) {
 	}
 	out := CloneNetworkOptions(options)
 	if out.DNS != nil {
-		dns := out.DNS
-		dns.Transport = strings.ToLower(strings.TrimSpace(dns.Transport))
-		if dns.Transport != "https" && dns.Transport != "tls" {
-			return nil, ErrConfiguration
-		}
-		ipText := strings.TrimSpace(dns.ServerIP)
-		ip := net.ParseIP(ipText)
-		if ip == nil || strings.Contains(ipText, "%") {
-			return nil, ErrConfiguration
-		}
-		dns.ServerIP = ip.String()
-		serverName, ok := normalizeHostname(dns.ServerName)
+		dns, ok := normalizeDNSOptions(*out.DNS)
 		if !ok {
 			return nil, ErrConfiguration
 		}
-		dns.ServerName = serverName
-		if dns.Port == 0 {
-			if dns.Transport == "https" {
-				dns.Port = 443
-			} else {
-				dns.Port = 853
-			}
-		}
-		if dns.Port < 1 || dns.Port > 65535 {
+		out.DNS = &dns
+	}
+	if len(out.Resolvers) > MaxDNSResolvers || len(out.DNSRules) > MaxDNSRules {
+		return nil, ErrConfiguration
+	}
+	for i := range out.Resolvers {
+		dns, ok := normalizeDNSOptions(out.Resolvers[i])
+		if !ok {
 			return nil, ErrConfiguration
 		}
-		if dns.Transport == "https" {
-			if dns.Path == "" {
-				dns.Path = "/dns-query"
-			}
-			if !validDNSPath(dns.Path) {
-				return nil, ErrConfiguration
-			}
-		} else if dns.Path != "" {
+		out.Resolvers[i] = dns
+	}
+	for i := range out.DNSRules {
+		rule := &out.DNSRules[i]
+		rule.Kind = strings.ToLower(strings.TrimSpace(rule.Kind))
+		if rule.Kind != "domain" && rule.Kind != "domain-suffix" {
 			return nil, ErrConfiguration
 		}
+		name, ok := normalizeHostname(rule.Value)
+		if !ok || rule.ResolverIndex < 0 || rule.ResolverIndex >= len(out.Resolvers) {
+			return nil, ErrConfiguration
+		}
+		rule.Value = name
+	}
+	if len(out.Resolvers) == 0 {
+		out.Resolvers = nil
+	}
+	if len(out.DNSRules) == 0 {
+		out.DNSRules = nil
 	}
 	if len(out.Rules) > MaxNetworkRules {
 		return nil, ErrConfiguration
@@ -173,12 +186,54 @@ func NetworkOptionsEquivalent(a, b *NetworkOptions) bool {
 	if first.DNS != nil && *first.DNS != *second.DNS {
 		return false
 	}
+	if first.AllowLAN != second.AllowLAN || !reflect.DeepEqual(first.Resolvers, second.Resolvers) || !reflect.DeepEqual(first.DNSRules, second.DNSRules) {
+		return false
+	}
 	for i := range first.Rules {
 		if first.Rules[i] != second.Rules[i] {
 			return false
 		}
 	}
 	return true
+}
+
+func normalizeDNSOptions(dns DNSOptions) (DNSOptions, bool) {
+	dns.Transport = strings.ToLower(strings.TrimSpace(dns.Transport))
+	if dns.Transport != "https" && dns.Transport != "tls" {
+		return DNSOptions{}, false
+	}
+	ipText := strings.TrimSpace(dns.ServerIP)
+	ip := net.ParseIP(ipText)
+	if ip == nil || strings.Contains(ipText, "%") {
+		return DNSOptions{}, false
+	}
+	dns.ServerIP = ip.String()
+	serverName, ok := normalizeHostname(dns.ServerName)
+	if !ok {
+		return DNSOptions{}, false
+	}
+	dns.ServerName = serverName
+	if dns.Port == 0 {
+		if dns.Transport == "https" {
+			dns.Port = 443
+		} else {
+			dns.Port = 853
+		}
+	}
+	if dns.Port < 1 || dns.Port > 65535 {
+		return DNSOptions{}, false
+	}
+	if dns.Transport == "https" {
+		if dns.Path == "" {
+			dns.Path = "/dns-query"
+		}
+		if !validDNSPath(dns.Path) {
+			return DNSOptions{}, false
+		}
+	} else if dns.Path != "" {
+		return DNSOptions{}, false
+	}
+	return dns, true
 }
 
 func normalizeHostname(value string) (string, bool) {

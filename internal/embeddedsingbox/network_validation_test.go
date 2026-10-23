@@ -11,9 +11,9 @@ import (
 
 func TestValidateCustomDoTWithoutStartingEngine(t *testing.T) {
 	plan, err := protocol.CompileWithNetwork("vless://6d7a9bdf-fdeb-4b9b-aa68-24abfa4bd12a@127.0.0.1:443?security=tls&sni=localhost", 2, true, 18001, 18002, "C:\\OneTunnel\\xray.exe", nil,
-		&protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "tls", ServerIP: "8.8.8.8", ServerName: "dns.example"}, Rules: []protocol.NetworkRule{
+		&protocol.NetworkOptions{DNS: &protocol.DNSOptions{Transport: "tls", ServerIP: "8.8.8.8", ServerName: "dns.example"}, Resolvers: []protocol.DNSOptions{{Transport: "https", ServerIP: "1.1.1.1", ServerName: "dns2.example"}}, DNSRules: []protocol.DNSRule{{Kind: "domain-suffix", Value: "private.example", ResolverIndex: 0}}, AllowLAN: true, Rules: []protocol.NetworkRule{
 			{Kind: "domain-suffix", Value: "example.com", Action: "proxy"},
-			{Kind: "cidr", Value: "0.0.0.0/0", Action: "direct"},
+			{Kind: "cidr", Value: "10.0.0.0/8", Action: "reject"},
 			{Kind: "process", Value: `C:\Windows\System32\blocked.exe`, Action: "reject"},
 		}})
 	if err != nil {

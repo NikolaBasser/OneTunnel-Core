@@ -125,3 +125,13 @@ app is open; they never silently apply. Turning a schedule off keeps its interva
 Use the tray profile submenu to select a profile without connecting. Up to50
 profiles are shown; use the main window for the rest. No service update is needed
 for these user-host features. These features do not alter networking automatically.
+
+DOMAIN DNS AND LAN PREFERENCES
+Additional resolver lines: transport | IP | TLS name | port | path.
+Use https or tls; empty port/path select protocol defaults. Maximum8 resolvers.
+DNS-rule lines: domain or domain-suffix | domain | resolver number (starting1).
+Maximum64 DNS rules, evaluated in order. Resolver traffic stays proxied.
+LAN access defaults off and covers10/8,172.16/12,192.168/16 and fc00::/7 only.
+Explicit user reject/proxy rules take precedence over the appended LAN exception.
+Save affects future shared-TUN proxy connections; native AWG/WG are unsupported.
+Local config tests do not establish live DNS/IPv6 leak or firewall behavior.

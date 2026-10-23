@@ -121,3 +121,10 @@ machine-specific consent are excluded. Existing backup files are never overwritt
 Optional per-subscription schedules run only while the user app is open, default
 off, wait their configured interval and prepare a review instead of applying it.
 Tray profile selection uses the Go projection and never starts a connection.
+
+Shared-TUN proxy policies support up to eight additional encrypted resolvers and
+64 ordered exact/suffix domain DNS rules. Resolver indices select verified-TLS
+DoH/DoT endpoints routed through the proxy; the default resolver remains final.
+An opt-in LAN exception sends only RFC1918 IPv4 and IPv6 ULA directly after
+explicit user rules. It defaults off, does not exclude OS routes, and never
+removes persistent traffic protection. Native AWG/WG remain configuration-driven.
