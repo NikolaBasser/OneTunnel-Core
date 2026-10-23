@@ -11,6 +11,12 @@ change preview and one-time Apply/Cancel tokens. Preview never writes the profil
 store; intervening changes require a fresh review. Provider-reported usage and
 expiry are optional metadata, not connection or entitlement guarantees.
 
+The Windows user host also provides a read-only `diagnostics.report` command.
+It returns formatted JSON with bundled profile-host identity, platform, protocol
+counts and package engine availability hints. It excludes credentials, profile
+names, server addresses, subscription URLs, paths and raw errors. It does not
+query the installed service or test connectivity, traffic protection or leaks.
+
 ## Protocols
 
 AmneziaWG, WireGuard, VLESS, SOCKS5, Hysteria2, Shadowsocks, HTTP CONNECT/HTTPS proxy,

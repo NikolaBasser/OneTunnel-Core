@@ -522,6 +522,12 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.desktop(ctx, r)
 	}
 	switch r.Command {
+	case "diagnostics.report":
+		report, err := a.diagnosticsReport()
+		if err != nil {
+			return nil, err
+		}
+		return report, nil
 	case "desktop.context", "desktop.observe", "desktop.unavailable":
 		return a.desktopProjectionCommand(r)
 	case "editor.load":

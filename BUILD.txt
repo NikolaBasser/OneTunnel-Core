@@ -40,6 +40,14 @@ and framed API1 requests to check preview/apply/cancel, conflicts and privacy.
 They do not change the installed service, real profiles, routes, DNS or WFP.
 Manual subscription refresh runs in the user host; this feature needs no service update.
 
+DIAGNOSTICS
+The Windows API1 diagnostics.report command returns an allowlisted JSON string.
+Its build identity belongs to the bundled profile host, not the installed service.
+Package engine hints are not operational health results. Generation reads local
+profile counts without service calls, network requests or profile-store writes.
+Synthetic diagnostics_windows_test.go covers schema allowlists, secret exclusion,
+unknown protocols, corrupt stores and unchanged storage. No service update is needed.
+
 PORTABLE FOUNDATION
 The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
 go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles
