@@ -3,10 +3,10 @@ package profiles
 import (
 	"context"
 	"errors"
-	"golang.org/x/sys/windows"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -169,6 +169,7 @@ func presentationDocument(document Document) Document {
 	view := document
 	view.Profiles = make([]Profile, len(document.Profiles))
 	copy(view.Profiles, document.Profiles)
+	view.FavoriteIDs = normalizeFavoriteIDs(document.FavoriteIDs, document.Profiles)
 	for i := range view.Profiles {
 		view.Profiles[i].Source = ""
 	}

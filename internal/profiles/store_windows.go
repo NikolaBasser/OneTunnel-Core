@@ -17,6 +17,7 @@ import (
 type Document struct {
 	Version              int
 	Profiles             []Profile
+	FavoriteIDs          []string `json:",omitempty"`
 	CollapsedGroups      []string
 	SubscriptionSources  map[string]string
 	SubscriptionMetadata map[string]SubscriptionMetadata `json:",omitempty"`
@@ -197,6 +198,7 @@ func (s *Store) load() (Document, error) {
 			delete(d.SubscriptionMetadata, group)
 		}
 	}
+	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
 	s.revision = sha256.Sum256(encrypted)
 	s.loaded = true
 	return d, nil
@@ -233,6 +235,7 @@ func (s *Store) Save(d Document) error {
 		seen[p.ID] = true
 		groups[p.Group] = true
 	}
+	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
 	for group, source := range d.SubscriptionSources {
 		if !groups[group] {
 			delete(d.SubscriptionSources, group)

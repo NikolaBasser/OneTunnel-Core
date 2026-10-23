@@ -48,6 +48,18 @@ profile counts without service calls, network requests or profile-store writes.
 Synthetic diagnostics_windows_test.go covers schema allowlists, secret exclusion,
 unknown protocols, corrupt stores and unchanged storage. No service update is needed.
 
+PROFILE LIBRARY
+Windows API1 favorite.set stores a validated desired favorite state for an existing
+profile ID; ui.favorite.set returns the sanitized document. Repeated desired state
+is a no-op. library.view returns ordered visible IDs for stored/name/protocol sort
+and an optional favorites-only filter. Sorting is stable; name comparison uses
+lowercase Unicode values and protocol comparison uses persisted numeric IDs.
+Neither projection nor preference changes execute service or network commands.
+Favorites are optional encrypted document metadata; old stores need no migration
+write. Save removes references to deleted/retired profiles. View order never changes
+the stored order used for fallback selection. Synthetic tests cover compatibility,
+preview conflicts, failure preservation and deterministic ordering.
+
 PORTABLE FOUNDATION
 The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
 go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles

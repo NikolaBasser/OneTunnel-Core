@@ -17,6 +17,12 @@ counts and package engine availability hints. It excludes credentials, profile
 names, server addresses, subscription URLs, paths and raw errors. It does not
 query the installed service or test connectivity, traffic protection or leaks.
 
+The Windows user host persists optional favorite profile IDs and projects library
+views in stored, name or protocol order. Filtering and sorting return profile IDs
+without credentials and never reorder persisted profiles or fallback candidates.
+Favorites follow stable IDs across edits/subscription updates and are pruned when
+profiles disappear. An already-applied favorite choice does not rewrite storage.
+
 ## Protocols
 
 AmneziaWG, WireGuard, VLESS, SOCKS5, Hysteria2, Shadowsocks, HTTP CONNECT/HTTPS proxy,

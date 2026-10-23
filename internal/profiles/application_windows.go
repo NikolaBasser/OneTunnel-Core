@@ -41,6 +41,9 @@ type Request struct {
 	Encrypt        bool
 	Path           string
 	FullDevice     bool
+	Favorite       bool
+	FavoritesOnly  bool
+	Sort           string
 	TransportInput *TransportInput
 	Observation    *platform.ServiceObservation
 	Context        *DesktopContext
@@ -522,6 +525,10 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.desktop(ctx, r)
 	}
 	switch r.Command {
+	case "favorite.set":
+		return a.setFavorite(r.ID, r.Favorite)
+	case "library.view":
+		return a.libraryView(r.Sort, r.FavoritesOnly)
 	case "diagnostics.report":
 		report, err := a.diagnosticsReport()
 		if err != nil {
