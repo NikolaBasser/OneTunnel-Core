@@ -60,6 +60,18 @@ write. Save removes references to deleted/retired profiles. View order never cha
 the stored order used for fallback selection. Synthetic tests cover compatibility,
 preview conflicts, failure preservation and deterministic ordering.
 
+GROUP MANAGEMENT
+group.list returns Name/ProfileCount/IsSubscription/Token summaries. The token is
+an opaque encrypted-store revision. group.rename (Group/Name/Token) and group.delete
+(Group/Token) reject stale snapshots before writing; rename rejects collisions
+rather than merging groups. Use ui.* mutations for sanitized Document responses.
+group.expansion.all applies Expanded to all stored groups, including hidden ones.
+Individual and bulk expansion skip redundant writes. All group mutations reject
+retained active/reconnecting/recovery/locked facts and legacy recovery files.
+The UI checks Go CanAdd before entering its busy operation. No service or network
+call is made. Tests use synthetic stores and validate snapshot safety, metadata,
+favorites, no-op bytes and failure preservation. No installed-service update needed.
+
 PORTABLE FOUNDATION
 The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
 go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles

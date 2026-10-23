@@ -525,6 +525,14 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.desktop(ctx, r)
 	}
 	switch r.Command {
+	case "group.list":
+		return a.groupList()
+	case "group.rename":
+		return a.renameGroup(r.Group, r.Name, r.Token)
+	case "group.delete":
+		return a.deleteGroup(r.Group, r.Token)
+	case "group.expansion.all":
+		return a.setAllGroupsExpanded(r.Expanded)
 	case "favorite.set":
 		return a.setFavorite(r.ID, r.Favorite)
 	case "library.view":
@@ -668,37 +676,7 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		}
 		return d, nil
 	case "group.expansion":
-		d, e := a.Store.Load()
-		if e != nil {
-			return nil, e
-		}
-		exists := false
-		for _, p := range d.Profiles {
-			if p.Group == r.Group {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			return nil, ErrImport
-		}
-		var collapsed []string
-		for _, group := range d.CollapsedGroups {
-			if group != r.Group {
-				collapsed = append(collapsed, group)
-			}
-		}
-		if !r.Expanded {
-			collapsed = append(collapsed, r.Group)
-		}
-		if collapsed == nil {
-			collapsed = []string{}
-		}
-		d.CollapsedGroups = collapsed
-		if e = a.Store.Save(d); e != nil {
-			return nil, e
-		}
-		return d, nil
+		return a.setGroupExpanded(r.Group, r.Expanded)
 	case "file.read":
 		f, e := os.Open(r.Path)
 		if e != nil {

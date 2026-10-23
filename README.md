@@ -23,6 +23,12 @@ without credentials and never reorder persisted profiles or fallback candidates.
 Favorites follow stable IDs across edits/subscription updates and are pruned when
 profiles disappear. An already-applied favorite choice does not rewrite storage.
 
+Windows group management lists local groups, renames them without merging,
+deletes a reviewed group snapshot and persists expand/collapse-all state.
+Renames move subscription metadata and retain profile IDs and favorite choices.
+Rename/delete require the current store revision token; stale requests are rejected.
+These operations never query a subscription or change system networking.
+
 ## Protocols
 
 AmneziaWG, WireGuard, VLESS, SOCKS5, Hysteria2, Shadowsocks, HTTP CONNECT/HTTPS proxy,
