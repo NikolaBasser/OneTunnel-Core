@@ -96,3 +96,9 @@ An explicit best-result action selects a successful network check without connec
 WireGuard/AmneziaWG configuration-only checks are excluded. Results are kept only
 in user-host memory, become stale after storage changes, and can be cleared.
 The duration includes engine startup, HTTPS probing, and cleanup; it is not ping.
+
+Selected-profile organization supports local copies and manual-group moves.
+Copies preserve protocol and transport/reliability options, receive a new ID and
+start without a favorite mark. Subscription profiles can be copied to manual
+groups; subscription members and managed destination groups cannot be moved.
+Both actions require the reviewed storage snapshot and never start a connection.

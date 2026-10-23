@@ -89,3 +89,12 @@ Results are temporary user-host state. Sort/filter do not change profile or fall
 order. The best-result action uses the entire completed batch, regardless of the
 visible filter, and only changes selection. It never starts a connection.
 Changed profile storage requires a fresh check. No service update is required.
+
+PROFILE COPY AND MOVE
+Open the selected-profile tools on the connection page. Enter a copy name and a
+manual destination group, then create a copy or move the selected manual profile.
+The destination can be an existing manual group or a new group. Saved subscription
+groups cannot be destinations. Reload the tools after a changed storage snapshot.
+Moving keeps the ID, favorite and stored position. Copies append to stored order.
+These actions preserve unfinished editor drafts and do not connect a tunnel.
+No installed-service update is required for these user-host operations.

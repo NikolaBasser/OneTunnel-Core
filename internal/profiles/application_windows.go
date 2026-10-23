@@ -539,6 +539,12 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.setFavorite(r.ID, r.Favorite)
 	case "library.view":
 		return a.libraryView(r.Sort, r.FavoritesOnly)
+	case "profile.organization":
+		return a.profileOrganization(r.ID)
+	case "profile.duplicate":
+		return a.duplicateProfile(r.ID, r.Name, r.Group, r.Token)
+	case "profile.move":
+		return a.moveProfile(r.ID, r.Group, r.Token)
 	case "diagnostics.report":
 		report, err := a.diagnosticsReport()
 		if err != nil {
