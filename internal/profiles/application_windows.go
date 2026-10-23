@@ -44,6 +44,7 @@ type Request struct {
 	Favorite       bool
 	FavoritesOnly  bool
 	Sort           string
+	Filter         string
 	TransportInput *TransportInput
 	Observation    *platform.ServiceObservation
 	Context        *DesktopContext
@@ -81,6 +82,7 @@ type Application struct {
 	desktopRevision uint64
 	desktopRetired  map[string]bool
 	pendingPreview  *pendingSubscriptionPreview
+	groupResults    *completedGroupResults
 }
 
 type pendingSubscriptionPreview struct {
@@ -645,6 +647,13 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.Prepare(ctx, r.ID)
 	case "group.check":
 		return a.checkGroup(ctx, r.Group)
+	case "group.results.view":
+		return a.groupResultsView(r.Sort, r.Filter)
+	case "group.results.clear":
+		a.groupResults = nil
+		return nil, nil
+	case "group.results.fastest":
+		return a.groupResultsFastest(r.Token)
 	case "editor.save":
 		return a.SaveEditor(ctx, r)
 	case "store.load":

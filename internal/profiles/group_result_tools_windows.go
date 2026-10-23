@@ -1,0 +1,152 @@
+package profiles
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+)
+
+type completedGroupResults struct {
+	result   GroupCheckResult
+	revision [32]byte
+	token    string
+}
+
+type GroupResultDisplayRow struct {
+	ID, Name, Message    string
+	Success, NetworkTest bool
+	Milliseconds         int64
+	TimingLabel          string
+}
+
+type GroupResultsView struct {
+	Group, CheckedAt                    string
+	Rows                                []GroupResultDisplayRow
+	HasResults, Stale, CanSelectFastest bool
+	Token, Message                      string
+}
+
+func eligibleGroupResult(row GroupCheckRow) bool {
+	return row.Success && row.NetworkTest && row.Milliseconds >= 0
+}
+
+func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsView, error) {
+	if sortMode == "" {
+		sortMode = "stored"
+	}
+	if filter == "" {
+		filter = "all"
+	}
+	if sortMode != "stored" && sortMode != "duration" {
+		return GroupResultsView{}, errors.New("Недопустимый порядок результатов.")
+	}
+	if filter != "all" && filter != "reachable" && filter != "failed" && filter != "config-only" {
+		return GroupResultsView{}, errors.New("Недопустимый фильтр результатов.")
+	}
+	view := GroupResultsView{Rows: []GroupResultDisplayRow{}, Message: "Проверок ещё нет."}
+	batch := a.groupResults
+	if batch == nil {
+		return view, nil
+	}
+	view.Group, view.CheckedAt, view.Token = batch.result.Group, batch.result.CheckedAt, batch.token
+	view.HasResults = len(batch.result.Rows) > 0
+	rows := append([]GroupCheckRow(nil), batch.result.Rows...)
+	if sortMode == "duration" {
+		sort.SliceStable(rows, func(i, j int) bool {
+			iOK, jOK := eligibleGroupResult(rows[i]), eligibleGroupResult(rows[j])
+			if iOK != jOK {
+				return iOK
+			}
+			return iOK && rows[i].Milliseconds < rows[j].Milliseconds
+		})
+	}
+	view.Rows = make([]GroupResultDisplayRow, 0, len(rows))
+	for _, row := range rows {
+		eligible := eligibleGroupResult(row)
+		switch filter {
+		case "reachable":
+			if !eligible {
+				continue
+			}
+		case "failed":
+			if row.Success {
+				continue
+			}
+		case "config-only":
+			if row.NetworkTest {
+				continue
+			}
+		}
+		label := "Configuration only · no network check"
+		if row.NetworkTest {
+			label = "Check duration unavailable"
+			if row.Milliseconds >= 0 {
+				label = formatCheckDuration(row.Milliseconds)
+			}
+		}
+		view.Rows = append(view.Rows, GroupResultDisplayRow{
+			ID: row.ID, Name: row.Name, Message: row.Message, Success: row.Success,
+			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label,
+		})
+	}
+	view.Stale = a.Store == nil
+	if a.Store != nil {
+		if _, err := a.Store.Load(); err != nil {
+			view.Stale = true
+		} else {
+			view.Stale = a.Store.revision != batch.revision
+		}
+	}
+	if view.Stale {
+		view.Message = "Хранилище изменилось. Запусти проверку группы снова."
+		return view, nil
+	}
+	view.Message = ""
+	view.CanSelectFastest = a.refreshAllowed() && hasEligibleGroupResult(rows)
+	if !view.CanSelectFastest && !view.HasResults {
+		view.Message = "В проверке нет результатов."
+	} else if !view.CanSelectFastest {
+		view.Message = "Нет подходящего результата для выбора."
+	}
+	return view, nil
+}
+
+func hasEligibleGroupResult(rows []GroupCheckRow) bool {
+	for _, row := range rows {
+		if eligibleGroupResult(row) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Application) groupResultsFastest(token string) (string, error) {
+	batch := a.groupResults
+	if batch == nil || token == "" || token != batch.token || a.Store == nil {
+		return "", errors.New("Результаты проверки устарели. Запусти проверку группы снова.")
+	}
+	document, err := a.Store.Load()
+	if err != nil || a.Store.revision != batch.revision || !a.refreshAllowed() {
+		return "", errors.New("Результаты проверки устарели или выбор сейчас недоступен.")
+	}
+	var fastest *GroupCheckRow
+	for i := range batch.result.Rows {
+		row := &batch.result.Rows[i]
+		if eligibleGroupResult(*row) && (fastest == nil || row.Milliseconds < fastest.Milliseconds) {
+			fastest = row
+		}
+	}
+	if fastest == nil {
+		return "", errors.New("Нет подходящего результата для выбора.")
+	}
+	for _, profile := range document.Profiles {
+		if profile.ID == fastest.ID {
+			return fastest.ID, nil
+		}
+	}
+	return "", errors.New("Результаты проверки устарели. Запусти проверку группы снова.")
+}
+
+func formatCheckDuration(milliseconds int64) string {
+	return fmt.Sprintf("%d ms check duration", milliseconds)
+}

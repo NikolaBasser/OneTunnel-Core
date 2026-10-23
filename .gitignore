@@ -74,3 +74,4 @@
 !/internal/profiles/profile_library_windows_test.go
 !/internal/profiles/group_management_windows_test.go
 !/sdk/sdk_test.go
+!/internal/profiles/group_result_tools_windows_test.go

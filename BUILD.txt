@@ -83,3 +83,9 @@ LEGAL NOTICES
 go.mod/go.sum pin dependencies; generated bundles include notices collected from
 the actual linked modules. Static upstream notices are retained in licenses/.
 See THIRD-PARTY-NOTICES.txt and preserve applicable redistribution obligations.
+
+GROUP CHECK RESULTS
+Results are temporary user-host state. Sort/filter do not change profile or fallback
+order. The best-result action uses the entire completed batch, regardless of the
+visible filter, and only changes selection. It never starts a connection.
+Changed profile storage requires a fresh check. No service update is required.

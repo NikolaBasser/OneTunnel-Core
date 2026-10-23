@@ -21,6 +21,7 @@ type GroupCheckResult struct {
 }
 
 func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckResult, error) {
+	a.groupResults = nil
 	result := GroupCheckResult{Group: group, CheckedAt: time.Now().Format(time.RFC3339), Rows: []GroupCheckRow{}}
 	status := a.desktopCall(ctx, "status", nil, false)
 	if !status.Available || status.Response.State.Active || status.Response.State.TrafficLocked || status.Response.State.NeedsRecovery || status.Response.State.Reconnecting {
@@ -30,6 +31,7 @@ func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckR
 	if err != nil {
 		return result, err
 	}
+	revision := a.Store.revision
 	call := a.ServiceCall
 	if call == nil {
 		call = platform.CallService
@@ -51,13 +53,18 @@ func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckR
 		response, _, err := call(deadline, control.Request{Version: 1, Command: "check-profile", Profile: &p})
 		cancel()
 		if err != nil || response.Error != nil || response.Result == nil {
-			return result, errors.New("Проверка прервана: служба недоступна или подключение занято")
+			return GroupCheckResult{}, errors.New("Проверка прервана: служба недоступна или подключение занято")
 		}
 		var check control.ProfileCheck
 		if json.Unmarshal([]byte(*response.Result), &check) != nil {
-			return result, errors.New("Обнови службу для проверки групп")
+			return GroupCheckResult{}, errors.New("Обнови службу для проверки групп")
 		}
 		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message})
 	}
+	if err := ctx.Err(); err != nil {
+		return GroupCheckResult{}, errors.New("Проверка прервана: служба недоступна или подключение занято")
+	}
+	rows := append([]GroupCheckRow(nil), result.Rows...)
+	a.groupResults = &completedGroupResults{result: GroupCheckResult{Group: result.Group, CheckedAt: result.CheckedAt, Rows: rows}, revision: revision, token: newID()}
 	return result, nil
 }

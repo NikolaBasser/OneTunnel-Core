@@ -90,3 +90,9 @@ See [security policy](.github/SECURITY.md), [third-party notices](THIRD-PARTY-NO
 `go.mod`, `go.sum` and the dependency notices included in generated bundles. Preserve upstream
 licenses and applicable source-distribution obligations. No additional project-wide license
 is granted by this README.
+
+Group check results can be sorted by full check duration and filtered by outcome.
+An explicit best-result action selects a successful network check without connecting.
+WireGuard/AmneziaWG configuration-only checks are excluded. Results are kept only
+in user-host memory, become stale after storage changes, and can be cleared.
+The duration includes engine startup, HTTPS probing, and cleanup; it is not ping.
