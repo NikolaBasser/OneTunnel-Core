@@ -47,6 +47,11 @@ type child struct {
 	started int64
 }
 type Runtime struct {
+	bootstrapIPs    map[string]string
+	retry           retryState
+	retrying        bool
+	retryMu         sync.Mutex
+	retryCancel     context.CancelFunc
 	directory, root string
 	lock            trafficLock
 	operations      sync.Mutex
@@ -150,10 +155,12 @@ func (r *Runtime) publish(status string) {
 	r.state.Active = r.session != nil && !r.transportFailed
 	r.state.NeedsRecovery = r.transportFailed || (r.session == nil && r.recovery())
 	r.state.TrafficLocked = r.lock.needed()
+	r.state.Reconnecting = r.retrying
+	r.state.ReconnectAttempt = r.retry.attempt
 	if status != "" {
 		r.state.Status = status
 	}
-	if r.state.NeedsRecovery {
+	if r.state.NeedsRecovery && !r.state.Reconnecting {
 		if r.state.TrafficLocked {
 			r.state.Status = "Требуется восстановление · прямой трафик заблокирован"
 		} else {
@@ -166,6 +173,9 @@ func (r *Runtime) publish(status string) {
 }
 func (r *Runtime) Alive() bool { return !r.dead.Load() }
 func (r *Runtime) Call(ctx context.Context, request control.Request) (control.BackendResult, error) {
+	if request.Command == "stop" || request.Command == "recover" {
+		r.cancelRetry()
+	}
 	r.operations.Lock()
 	defer r.operations.Unlock()
 	if !r.Alive() {
@@ -179,10 +189,20 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 	case "hello", "status":
 		r.poll()
 	case "start":
+		r.bootstrapIPs = map[string]string{}
 		e = r.start(ctx, request)
+		if e == nil {
+			r.armRetry(request)
+		}
+	case "check-profile":
+		result, e = r.checkProfile(ctx, request.Profile)
 	case "stop":
+		r.retry = retryState{}
+		r.retrying = false
 		e = r.disconnect(ctx)
 	case "recover":
+		r.retry = retryState{}
+		r.retrying = false
 		e = r.recover(ctx)
 	case "probe":
 		var text string
@@ -229,6 +249,7 @@ func (r *Runtime) monitor() {
 		case <-timer.C:
 			if r.operations.TryLock() {
 				r.poll()
+				r.maintainConnection()
 				r.publish("")
 				r.operations.Unlock()
 			}
@@ -249,11 +270,18 @@ func (r *Runtime) poll() {
 		}
 	} else if r.session.EmbeddedNative {
 		failed = nativeExited(r.embeddedNative)
+		if !failed && r.session.FullDevice {
+			name, e := routeInterface("1.1.1.1")
+			failed = e != nil || name != r.session.TunnelName
+		}
 	} else {
 		running, _ := nativeServiceState(nativeServiceName(r.session))
 		failed = !running
 	}
 	if failed {
+		if !r.transportFailed && len(r.retry.targets) > 0 {
+			r.retry.next = time.Now().Add(time.Second)
+		}
 		r.transportFailed = true
 		if r.lock.needed() {
 			r.publish("Соединение оборвано · прямой трафик заблокирован")
@@ -287,6 +315,7 @@ func childExited(c *child) bool {
 	}
 }
 func (r *Runtime) Close() {
+	r.cancelRetry()
 	if r.dead.Swap(true) {
 		return
 	}
@@ -451,9 +480,16 @@ func writeConfig(path string, c jsonObject) error {
 }
 func (r *Runtime) save() error { return atomicJSON(r.journal(), r.session) }
 func (r *Runtime) start(ctx context.Context, request control.Request) (err error) {
-	if r.session != nil || r.recovery() {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	if r.session != nil || r.recovery() && !(r.retrying && r.lock.needed() && !exists(r.journal())) {
 		return errors.New("recovery required")
 	}
+	if r.bootstrapIPs == nil {
+		r.bootstrapIPs = map[string]string{}
+	}
+	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: r.bootstrapIPs, secure: r.retrying && r.lock.needed(), attempt: r.retry.attempt})
 	if request.Profile == nil {
 		return protocol.ErrConfiguration
 	}
@@ -513,6 +549,8 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	r.state.FullDeviceMode = request.FullDevice
 	r.state.ClockSynchronized = false
 	r.state.LocalPort = local
+	id := p.ID
+	r.state.ProfileID = &id
 	r.stateMu.Unlock()
 	r.session = &Session{Kind: kind, Engine: engine, ConfigPath: path, TunnelName: tunnel, FullDevice: request.FullDevice}
 	r.session.EmbeddedNative = native && embeddedAWGEnabled()
@@ -526,12 +564,16 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		if err != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			if e := r.disconnect(cleanup); e != nil {
+			if e := r.disconnectMode(cleanup, r.retrying); e != nil {
 				r.publish("Ошибка · требуется восстановление")
 			}
 		}
 	}()
 	if native {
+		plan.NativeSource, err = pinNativeEndpoints(ctx, plan.NativeSource)
+		if err != nil {
+			return err
+		}
 		if err = os.WriteFile(path, []byte(plan.NativeSource), 0600); err != nil {
 			return err
 		}
@@ -764,7 +806,12 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		if e != nil {
 			return e
 		}
-		if err = r.lock.enable(name, paths); err != nil {
+		if r.retrying && r.lock.needed() {
+			err = r.lock.replace(name, paths)
+		} else {
+			err = r.lock.enable(name, paths)
+		}
+		if err != nil {
 			return err
 		}
 		dnsFlush.Call()
@@ -867,7 +914,8 @@ func stopChild(ctx context.Context, c *child, pid int, started int64, path strin
 	}
 	return nil
 }
-func (r *Runtime) disconnect(ctx context.Context) error {
+func (r *Runtime) disconnect(ctx context.Context) error { return r.disconnectMode(ctx, false) }
+func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
 	flush := r.lock.needed()
 	if r.session != nil {
 		s := r.session
@@ -936,13 +984,17 @@ func (r *Runtime) disconnect(ctx context.Context) error {
 				return e
 			}
 		}
-		if e := r.lock.remove(false); e != nil {
-			return e
+		if !retainLock {
+			if e := r.lock.remove(false); e != nil {
+				return e
+			}
 		}
 		r.session = nil
 	}
-	if e := r.lock.remove(false); e != nil {
-		return e
+	if !retainLock {
+		if e := r.lock.remove(false); e != nil {
+			return e
+		}
 	}
 	if flush {
 		dnsFlush.Call()
@@ -953,8 +1005,13 @@ func (r *Runtime) disconnect(ctx context.Context) error {
 	r.transportFailed = false
 	r.stateMu.Lock()
 	r.state.LocalPort = 0
-	r.state.WholeDevice = false
-	r.state.FullDeviceMode = false
+	if !retainLock {
+		r.state.ProfileID = nil
+	}
+	if !retainLock {
+		r.state.WholeDevice = false
+		r.state.FullDeviceMode = false
+	}
 	r.state.ClockSynchronized = false
 	r.stateMu.Unlock()
 	r.publish("Отключено")

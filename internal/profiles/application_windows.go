@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"golang.org/x/sys/windows"
+	"onetunnel/core/internal/control"
 	"onetunnel/core/internal/platform"
 	"onetunnel/core/internal/protocol"
 	"os"
@@ -16,6 +17,7 @@ import (
 )
 
 type Request struct {
+	Reliability    *control.ReliabilityOptions
 	Version        int
 	Command        string
 	Name           string
@@ -143,6 +145,9 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 		return Applied{}, e
 	}
 	if batch {
+		if r.Reliability != nil && (r.Reliability.AutoReconnect || r.Reliability.UseFallbacks) {
+			return Applied{}, errors.New("Сначала импортируй подписку, затем настрой восстановление у нужного профиля.")
+		}
 		if r.ID != "" {
 			return Applied{}, errors.New("Для импорта подписки нажми «Добавить».")
 		}
@@ -166,6 +171,10 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 	}
 	p.Group = group
 	p.Transport = r.Transport
+	p.Reliability = r.Reliability
+	if p.Reliability != nil && !p.Reliability.AutoReconnect {
+		p.Reliability = &control.ReliabilityOptions{}
+	}
 	if e = Validate(p); e != nil {
 		return Applied{}, e
 	}
@@ -351,6 +360,8 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.apply(ImportResult{Profiles: r.Incoming}, r.Source, r.Group)
 	case "subscription.prepare":
 		return a.Prepare(ctx, r.ID)
+	case "group.check":
+		return a.checkGroup(ctx, r.Group)
 	case "editor.save":
 		return a.SaveEditor(ctx, r)
 	case "store.load":

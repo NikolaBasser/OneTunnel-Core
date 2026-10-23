@@ -76,6 +76,9 @@ func resolveEndpoint(ctx context.Context, host string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	if resolver, ok := ctx.Value(bootstrapKey{}).(*bootstrapResolver); ok {
+		return resolver.lookup(ctx, host)
+	}
 	ips, e := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if e != nil {
 		return "", e

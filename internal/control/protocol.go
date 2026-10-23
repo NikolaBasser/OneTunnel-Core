@@ -22,21 +22,25 @@ var guid = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 // Numeric protocol IDs and PascalCase JSON are the existing desktop v1 contract.
 type Profile struct {
-	Transport *protocol.TransportOptions `json:"Transport,omitempty"`
-	ID        string                     `json:"Id"`
-	Name      string                     `json:"Name"`
-	Protocol  int                        `json:"Protocol"`
-	Source    string                     `json:"Source"`
-	Group     string                     `json:"Group"`
-	Label     string                     `json:"Label,omitempty"`
+	Reliability *ReliabilityOptions        `json:"Reliability,omitempty"`
+	Transport   *protocol.TransportOptions `json:"Transport,omitempty"`
+	ID          string                     `json:"Id"`
+	Name        string                     `json:"Name"`
+	Protocol    int                        `json:"Protocol"`
+	Source      string                     `json:"Source"`
+	Group       string                     `json:"Group"`
+	Label       string                     `json:"Label,omitempty"`
 }
 type Request struct {
-	Version    int      `json:"Version"`
-	Command    string   `json:"Command"`
-	Profile    *Profile `json:"Profile"`
-	FullDevice bool     `json:"FullDevice"`
+	Fallbacks  []Profile `json:"Fallbacks,omitempty"`
+	Version    int       `json:"Version"`
+	Command    string    `json:"Command"`
+	Profile    *Profile  `json:"Profile"`
+	FullDevice bool      `json:"FullDevice"`
 }
 type State struct {
+	Reconnecting      bool    `json:"Reconnecting,omitempty"`
+	ReconnectAttempt  int     `json:"ReconnectAttempt,omitempty"`
 	Active            bool    `json:"Active"`
 	NeedsRecovery     bool    `json:"NeedsRecovery"`
 	TrafficLocked     bool    `json:"TrafficLocked"`
@@ -65,16 +69,30 @@ func Validate(r Request) string {
 	if r.Version != Version {
 		return "incompatible_version"
 	}
-	if r.Command != "start" && (r.Profile != nil || r.FullDevice) {
+	if len(r.Fallbacks) > 8 || (r.Command != "start" && len(r.Fallbacks) > 0) {
+		return "invalid_request"
+	}
+	if r.Command != "start" && r.Command != "check-profile" && (r.Profile != nil || r.FullDevice) {
 		return "invalid_request"
 	}
 	switch r.Command {
 	case "hello", "status", "watch", "stop", "recover", "probe":
 		return ""
-	case "start":
+	case "start", "check-profile":
+		if r.Command == "check-profile" && r.FullDevice {
+			return "invalid_request"
+		}
 		p := r.Profile
 		if p == nil || !guid.MatchString(p.ID) || strings.ReplaceAll(p.ID, "-", "") == strings.Repeat("0", 32) || p.Protocol < 0 || p.Protocol > protocol.MaxKind || strings.TrimSpace(p.Source) == "" || len(utf16.Encode([]rune(p.Source))) > 131072 || len(utf16.Encode([]rune(p.Name))) > 4096 {
 			return "invalid_configuration"
+		}
+		if p.Reliability != nil && p.Reliability.UseFallbacks && !p.Reliability.AutoReconnect {
+			return "invalid_configuration"
+		}
+		for _, candidate := range r.Fallbacks {
+			if candidate.ID == p.ID || candidate.Group != p.Group || !CompatibleFallback(*p, candidate, r.FullDevice) || Validate(Request{Version: Version, Command: "start", Profile: &candidate}) != "" {
+				return "invalid_configuration"
+			}
 		}
 		return ""
 	default:

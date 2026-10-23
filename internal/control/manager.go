@@ -50,6 +50,9 @@ func (m *Manager) store(s State, generation uint64) {
 	if generation != m.generation || m.closing || m.failed {
 		return
 	}
+	if s.ProfileID != nil {
+		m.profileID = s.ProfileID
+	}
 	s.ProfileID = m.profileID
 	if m.state != s {
 		m.state = s
@@ -166,7 +169,7 @@ func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 		m.mu.Unlock()
 		return m.reply(nil, "backend_unavailable")
 	}
-	if message.Error == nil && (request.Command == "stop" || request.Command == "recover") || message.Error != nil && !message.State.Active {
+	if message.Error == nil && (request.Command == "stop" || request.Command == "recover") || message.Error != nil && !message.State.Active && !message.State.Reconnecting {
 		m.profileID = nil
 	}
 	message.State.ProfileID = m.profileID

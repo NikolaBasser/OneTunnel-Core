@@ -1,0 +1,63 @@
+package profiles
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"onetunnel/core/internal/control"
+	"onetunnel/core/internal/platform"
+	"time"
+)
+
+type GroupCheckRow struct {
+	ID, Name, Message    string
+	Success, NetworkTest bool
+	Milliseconds         int64
+}
+type GroupCheckResult struct {
+	Group     string
+	CheckedAt string
+	Rows      []GroupCheckRow
+}
+
+func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckResult, error) {
+	result := GroupCheckResult{Group: group, CheckedAt: time.Now().Format(time.RFC3339), Rows: []GroupCheckRow{}}
+	status := a.desktopCall(ctx, "status", nil, false)
+	if !status.Available || status.Response.State.Active || status.Response.State.TrafficLocked || status.Response.State.NeedsRecovery || status.Response.State.Reconnecting {
+		return result, errors.New("Отключи подключение перед проверкой группы")
+	}
+	document, err := a.Store.Load()
+	if err != nil {
+		return result, err
+	}
+	call := a.ServiceCall
+	if call == nil {
+		call = platform.CallService
+	}
+	count := 0
+	for _, p := range document.Profiles {
+		if p.Group == group {
+			count++
+		}
+	}
+	if count == 0 || count > 64 {
+		return result, errors.New("Выбери группу от 1 до 64 профилей для одной проверки")
+	}
+	for _, p := range document.Profiles {
+		if p.Group != group {
+			continue
+		}
+		deadline, cancel := context.WithTimeout(ctx, 25*time.Second)
+		response, _, err := call(deadline, control.Request{Version: 1, Command: "check-profile", Profile: &p})
+		cancel()
+		if err != nil || response.Error != nil || response.Result == nil {
+			return result, errors.New("Проверка прервана: служба недоступна или подключение занято")
+		}
+		var check control.ProfileCheck
+		if json.Unmarshal([]byte(*response.Result), &check) != nil {
+			return result, errors.New("Обнови службу для проверки групп")
+		}
+		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message})
+	}
+	return result, nil
+}

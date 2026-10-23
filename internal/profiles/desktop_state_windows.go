@@ -12,8 +12,11 @@ import (
 type DesktopContext struct {
 	Busy, StorageReady bool
 	SelectedID         string
+	CheckingGroup      bool
 }
 type DesktopActions struct {
+	CanCancelGroup                                                bool
+	CanCheckGroup                                                 bool
 	CanConnect, CanDisconnect, CanToggle, CanProbe, CanRecover    bool
 	CanAdd, CanEdit, CanDelete, CanSelect, CanChangeMode, CanSave bool
 	CanInstallService, CanStartService, CanClose                  bool
@@ -87,14 +90,16 @@ func (a *Application) consumeDesktop(observation platform.ServiceObservation) {
 func (a *Application) projectDesktop(reply DesktopReply, env Environment) DesktopReply {
 	c := a.desktopContext
 	s := reply.Response.State
-	idle := !s.Active && !s.NeedsRecovery && !s.TrafficLocked && !env.NeedsRecovery
+	idle := !s.Active && !s.NeedsRecovery && !s.TrafficLocked && !s.Reconnecting && !env.NeedsRecovery
 	actions := DesktopActions{ConnectCaption: "Подключить", CanClose: !c.Busy}
+	actions.CanCancelGroup = c.Busy && c.CheckingGroup
 	if !c.Busy {
 		actions.CanConnect = c.StorageReady && reply.Available && idle && c.SelectedID != ""
-		actions.CanDisconnect = reply.Available && s.Active
-		actions.CanProbe = reply.Available && s.Active && !s.NeedsRecovery
+		actions.CanDisconnect = reply.Available && (s.Active || s.Reconnecting)
+		actions.CanProbe = reply.Available && s.Active && !s.NeedsRecovery && !s.Reconnecting
 		actions.CanRecover = reply.Available || c.StorageReady && env.NeedsRecovery
 		actions.CanAdd = c.StorageReady && idle
+		actions.CanCheckGroup = actions.CanConnect
 		actions.CanEdit = actions.CanAdd && c.SelectedID != ""
 		actions.CanDelete = actions.CanEdit
 		actions.CanSelect = idle
@@ -103,11 +108,11 @@ func (a *Application) projectDesktop(reply DesktopReply, env Environment) Deskto
 		actions.CanInstallService = idle
 		actions.CanStartService = !reply.Available
 	}
-	if s.Active {
+	if s.Active || s.Reconnecting {
 		actions.ConnectCaption = "Отключить"
 	}
 	actions.CanToggle = actions.CanConnect || actions.CanDisconnect
-	display := DesktopDisplay{Status: s.Status, ShowSession: reply.Available && s.Active}
+	display := DesktopDisplay{Status: s.Status, ShowSession: reply.Available && (s.Active || s.Reconnecting)}
 	if !reply.Available {
 		display.Status = "Служба недоступна · состояние сети не подтверждено"
 	}

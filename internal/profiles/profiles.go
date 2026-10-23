@@ -555,6 +555,7 @@ func Merge(existing, incoming []Profile, group string) (MergeResult, error) {
 			used[match.ID] = true
 			fresh.ID = match.ID
 			fresh.Transport = match.Transport
+			fresh.Reliability = match.Reliability
 			if fresh.Source != match.Source || fresh.Name != match.Name {
 				r.Updated++
 			}

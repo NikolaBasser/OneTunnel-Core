@@ -125,6 +125,12 @@ func condition(field windows.GUID, kind uint32, value uintptr, match uint32) wCo
 	return wCondition{Field: field, Match: match, Value: wValue{Type: kind, Data: value}}
 }
 func (t trafficLock) enable(interfaceName string, enginePaths []string) error {
+	return t.configure(interfaceName, enginePaths, false)
+}
+func (t trafficLock) replace(interfaceName string, enginePaths []string) error {
+	return t.configure(interfaceName, enginePaths, true)
+}
+func (t trafficLock) configure(interfaceName string, enginePaths []string, replace bool) error {
 	if unsafe.Sizeof(wFilter{}) != 200 {
 		return errors.New("unsupported WFP layout")
 	}
@@ -138,11 +144,23 @@ func (t trafficLock) enable(interfaceName string, enginePaths []string) error {
 	var found uintptr
 	e = wCall("FwpmProviderGetByKey0", uintptr(h), uintptr(unsafe.Pointer(&providerKey)), uintptr(unsafe.Pointer(&found)))
 	if e == nil {
+		provider := (*wProvider)(unsafe.Pointer(found))
+		owner := t.ownerHash()
+		matches := provider.Data.Size == 32 && provider.Data.Data != nil
+		if matches {
+			for i, v := range unsafe.Slice(provider.Data.Data, 32) {
+				if v != owner[i] {
+					matches = false
+					break
+				}
+			}
+		}
 		wCall("FwpmFreeMemory0", uintptr(unsafe.Pointer(&found)))
-		return errors.New("existing traffic protection requires recovery")
-	}
-	if !wIgnored(e, 0x80320005) {
-		return e
+		if !replace || !matches {
+			return errors.New("existing traffic protection requires recovery")
+		}
+	} else if replace || !wIgnored(e, 0x80320005) {
+		return errors.New("traffic protection replacement unavailable")
 	}
 	list, buffer, e := adapters()
 	if e != nil {
@@ -178,9 +196,26 @@ func (t trafficLock) enable(interfaceName string, enginePaths []string) error {
 	defer func() {
 		if !committed {
 			wCall("FwpmTransactionAbort0", uintptr(h))
-			os.Remove(t.marker())
+			if !replace {
+				os.Remove(t.marker())
+			}
 		}
 	}()
+	if replace {
+		// The old deny policy remains active until the entire replacement commits.
+		for i := 0; i < 256; i++ {
+			key := t.key(fmt.Sprintf("filter/%d", i))
+			if e = wCall("FwpmFilterDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&key))); !wIgnored(e, 0x80320003) {
+				return e
+			}
+		}
+		if e = wCall("FwpmSubLayerDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&subKey))); e != nil {
+			return e
+		}
+		if e = wCall("FwpmProviderDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&providerKey))); e != nil {
+			return e
+		}
+	}
 	owner := t.ownerHash()
 	provider := wProvider{Key: providerKey, Display: wDisplayName("OneTunnel kill switch"), Flags: 1, Data: wBlob{Size: 32, Data: &owner[0]}}
 	if e = wCall("FwpmProviderAdd0", uintptr(h), uintptr(unsafe.Pointer(&provider)), 0); e != nil {

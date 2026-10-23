@@ -41,7 +41,23 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 	if call == nil {
 		call = platform.CallService
 	}
-	response, epoch, err := call(ctx, control.Request{Version: control.Version, Command: command, Profile: p, FullDevice: full})
+	request := control.Request{Version: control.Version, Command: command, Profile: p, FullDevice: full}
+	if command == "start" && p != nil && p.Reliability != nil && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks {
+		document, e := a.Store.Load()
+		if e != nil {
+			reply = a.desktopState
+			code := "profile_store_unavailable"
+			reply.Response.Error = &code
+			reply.Message = "Не удалось прочитать резервные профили"
+			return reply
+		}
+		for _, candidate := range document.Profiles {
+			if candidate.ID != p.ID && candidate.Group == p.Group && control.CompatibleFallback(*p, candidate, full) && len(request.Fallbacks) < 8 {
+				request.Fallbacks = append(request.Fallbacks, candidate)
+			}
+		}
+	}
+	response, epoch, err := call(ctx, request)
 	if err != nil {
 		a.consumeDesktop(platform.ServiceObservation{Available: false, CheckedAt: platform.ObservationClock()})
 		code := "service_unavailable"
@@ -84,7 +100,7 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 		if !before.Available || before.Response.Error != nil {
 			return before, nil
 		}
-		if before.Response.State.Active {
+		if before.Response.State.Active || before.Response.State.Reconnecting {
 			return a.desktopCall(ctx, "stop", nil, false), nil
 		}
 		r.Command = "connection.start"
