@@ -44,6 +44,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Go profile host build failed.' }
     $buildInfo = @(& $go version -m (Join-Path $service 'OneTunnel.Service.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read Go build metadata.' }
+    $buildInfo[0] = $buildInfo[0].Replace((Join-Path $service 'OneTunnel.Service.exe'), 'OneTunnel.Service.exe')
     $buildInfo | Set-Content (Join-Path $service 'go-build-info.txt') -Encoding UTF8
     function Module-Directory([string]$Name) {
         $directory = & $go list -m -mod=readonly -f '{{.Dir}}' $Name
