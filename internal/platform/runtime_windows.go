@@ -796,6 +796,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 				}
 			}
 		}
+		if err = prepareLANRoutes(c, request.FullDevice, p.Network); err != nil {
+			return err
+		}
 		if err = writeConfig(path, c); err != nil {
 			return err
 		}

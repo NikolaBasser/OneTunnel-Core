@@ -103,6 +103,7 @@
 !/internal/platform/user_startup_windows_test.go
 !/internal/platform/user_startup_live_acceptance_windows_test.go
 !/internal/platform/user_network_windows_test.go
+!/internal/platform/lan_routes_windows_test.go
 !/internal/profiles/user_settings_windows_test.go
 !/internal/profiles/user_network_live_acceptance_windows_test.go
 
