@@ -3,15 +3,19 @@
 package embeddedsingbox
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"github.com/sagernet/sing-box/adapter"
+	T "github.com/sagernet/sing-box/transport/trojan"
 	M "github.com/sagernet/sing/common/metadata"
 	"io"
 	"net"
@@ -26,6 +30,94 @@ import (
 	"testing"
 	"time"
 )
+
+// The upstream test server reads its 56-byte authentication prefix once.
+// HTTPUpgrade buffering is a stream, so collect that prefix before injecting it.
+type fixtureAuthConn struct {
+	net.Conn
+	reader io.Reader
+	first  bool
+}
+
+func (c *fixtureAuthConn) Read(p []byte) (int, error) {
+	if !c.first && len(p) == T.KeyLength {
+		c.first = true
+		return io.ReadFull(c.reader, p)
+	}
+	return c.reader.Read(p)
+}
+
+type fixtureSegmentReader struct{ io.Reader }
+
+func (r fixtureSegmentReader) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	return r.Reader.Read(p)
+}
+
+func TestTrojanFixtureFragmentedAuthentication(t *testing.T) {
+	service := T.NewService[int](nil, nil, nil)
+	if err := service.UpdateUsers([]int{0}, []string{"fixture-password"}); err != nil {
+		t.Fatal(err)
+	}
+	key := T.Key("fixture-password")
+	// Unknown command follows a valid authentication, avoiding any real routing.
+	data := append(append([]byte{}, key[:]...), '\r', '\n', 0)
+	broken := &fixtureAuthConn{reader: fixtureSegmentReader{bytes.NewReader(data)}, first: true}
+	if err := service.NewConnection(context.Background(), broken, M.Socksaddr{}, nil); err == nil || !strings.Contains(err.Error(), "bad request size") {
+		t.Fatalf("upstream partial-read regression not reproduced: %v", err)
+	}
+	fixed := &fixtureAuthConn{reader: fixtureSegmentReader{bytes.NewReader(data)}}
+	if err := service.NewConnection(context.Background(), fixed, M.Socksaddr{}, nil); err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("complete authentication prefix not preserved: %v", err)
+	}
+}
+
+func startUpgradeFixture(t *testing.T, in map[string]any, port int, certificate tls.Certificate) {
+	t.Helper()
+	delete(in, "transport")
+	delete(in, "tls")
+	in["tag"] = "fixture"
+	in["listen_port"] = 0
+	engine := startJSON(t, map[string]any{"inbounds": []any{in}, "outbounds": []any{map[string]any{"type": "direct"}}})
+	item, ok := engine.instance.Inbound().Get("fixture")
+	if !ok {
+		t.Fatal("missing fixture inbound")
+	}
+	handler, ok := item.(adapter.TCPInjectableInbound)
+	if !ok {
+		t.Fatal("fixture inbound cannot inject streams")
+	}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/fixture" || !strings.EqualFold(r.Header.Get("Connection"), "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || r.Header.Get("Sec-WebSocket-Key") != "" {
+			http.Error(w, "invalid upgrade", 400)
+			return
+		}
+		w.Header().Set("Connection", "upgrade")
+		w.Header().Set("Upgrade", "websocket")
+		w.WriteHeader(101)
+		controller := http.NewResponseController(w)
+		if err := controller.Flush(); err != nil {
+			return
+		}
+		conn, rw, err := controller.Hijack()
+		if err != nil {
+			return
+		}
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		handler.NewConnection(context.Background(), &fixtureAuthConn{Conn: conn, reader: rw.Reader}, adapter.InboundContext{Source: M.ParseSocksaddr(r.RemoteAddr)}, nil)
+	}))
+	_ = server.Listener.Close()
+	listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Listener = listener
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
+	t.Cleanup(server.Close)
+}
 
 func ensureNaiveFixture(t *testing.T) {
 	t.Helper()
@@ -134,7 +226,11 @@ func TestNewProxyTraffic(t *testing.T) {
 			if typ != "http" {
 				in["tls"] = map[string]any{"enabled": true, "certificate": []string{certPEM}, "key": []string{keyPEM}}
 			}
-			startJSON(t, map[string]any{"inbounds": []any{in}, "outbounds": []any{map[string]any{"type": "direct"}}})
+			if typ == "trojan-httpupgrade" {
+				startUpgradeFixture(t, in, serverPort, cert)
+			} else {
+				startJSON(t, map[string]any{"inbounds": []any{in}, "outbounds": []any{map[string]any{"type": "direct"}}})
+			}
 			plan, err := protocol.Compile(source, kind, false, clientPort, freePort(t), "unused")
 			if err != nil {
 				t.Fatal(err)

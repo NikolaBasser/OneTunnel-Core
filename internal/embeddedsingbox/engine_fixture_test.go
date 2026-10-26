@@ -44,10 +44,36 @@ func freePort(t *testing.T) int {
 			continue
 		}
 		usedPorts[p] = true
+		// Reservation lives as long as this test, not the entire -count process.
+		// Engine cleanup is registered later and therefore closes listeners first.
+		t.Cleanup(func() {
+			portMu.Lock()
+			delete(usedPorts, p)
+			portMu.Unlock()
+		})
 		return p
 	}
 	t.Fatal("no unused fixture port")
 	return 0
+}
+
+func TestFixturePortReservationReleased(t *testing.T) {
+	var port int
+	t.Run("reservation", func(t *testing.T) {
+		port = freePort(t)
+		portMu.Lock()
+		reserved := usedPorts[port]
+		portMu.Unlock()
+		if port <= 0 || !reserved {
+			t.Fatal("fixture port was not reserved")
+		}
+	})
+	portMu.Lock()
+	reserved := usedPorts[port]
+	portMu.Unlock()
+	if reserved {
+		t.Fatal("completed fixture retained its port reservation")
+	}
 }
 func startJSON(t *testing.T, v any) *Engine {
 	t.Helper()
