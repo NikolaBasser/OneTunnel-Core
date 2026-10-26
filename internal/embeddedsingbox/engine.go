@@ -167,6 +167,15 @@ func start(data []byte, wholeDevice bool, native NativeTransport) (*Engine, erro
 		cancel()
 		return nil, errors.New("embedded sing-box startup failed")
 	}
+	// TUN is created after the network manager's initial interface snapshot.
+	// Refresh before reporting ready so process rules recognize its local source.
+	if wholeDevice {
+		if err = instance.Network().UpdateInterfaces(); err != nil {
+			_ = instance.Close()
+			cancel()
+			return nil, errors.New("embedded sing-box interface refresh failed")
+		}
+	}
 	statistics.MarkStarted(time.Now())
 	if clock != nil {
 		go clock.run(ctx)

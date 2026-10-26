@@ -112,6 +112,8 @@ server-name bootstrap uses the fixed encrypted infrastructure path, separately
 from the custom tunneled resolver. Native AWG/WG with empty preferences retain imported DNS/AllowedIPs;
 nonempty full-device policies use the shared TUN; local mode is rejected. A matching new
 service build is required; an old strict service refuses unsupported fields.
+Whole-device startup refreshes the interface snapshot before becoming ready so
+executable-path rules apply to the first TUN connection.
 
 Portable backups use password-derived authenticated encryption and include profile,
 network, favorite, group and subscription settings. Restore previews a complete
@@ -127,7 +129,12 @@ Shared-TUN proxy policies support up to eight additional encrypted resolvers and
 DoH/DoT endpoints routed through the proxy; the default resolver remains final.
 An opt-in LAN exception sends only RFC1918 IPv4 and IPv6 ULA directly after
 explicit user rules. It defaults off, does not exclude OS routes, and never
-removes persistent traffic protection. Native AWG/WG without network preferences remain configuration-driven.
+removes persistent traffic protection. Connected private subnets on the default
+uplink receive more-specific TUN routes so explicit reject rules still apply to
+LAN traffic. Host/point-to-point prefixes and subnets overlapping the TUN address
+ranges are excluded; other interfaces and more-specific physical routes are not
+covered by this discovery. Native AWG/WG without network preferences remain
+configuration-driven.
 
 Connection statistics come from the embedded engine and reset for each successful
 connection attempt, including reconnect/fallback. Local-proxy payload includes
@@ -153,6 +160,17 @@ PAC/auto-detection conflicts block activation. External changes are retained and
 reported; machine WinHTTP is never modified. Closing the user host releases its
 proxy lease without stopping the VPN service. Portable restore disables automatic
 activation and excludes machine startup ownership.
+
+Windows acceptance tests exercise real registry APIs and DPAPI under exclusively
+created test keys, including typed restoration, external edits, partial-write
+rollback and loopback-listener loss. They never activate the user's system proxy
+or notify WinINET; actual WinINET switching and detached-watchdog acceptance
+remain separate checks.
+Opt-in dedicated-server acceptance additionally covers real WinINET activation,
+production watcher recovery after listener/owner loss, startup registration and
+Windows network-category transitions. These tests require explicit build tags
+and host guards; they do not run in the default suite. Category-controller tests
+use synthetic session/timing inputs and do not certify Windows logon or sleep.
 
 Group checks report total check duration separately from successful HTTPS probe
 latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.

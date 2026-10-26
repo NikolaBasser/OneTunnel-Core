@@ -483,6 +483,40 @@ func TestWatchdogRecoveryExhaustionPreservesJournalAndForeignValues(t *testing.T
 	}
 }
 
+func TestWatchdogRecoveryReportsCompletedSelectiveRestore(t *testing.T) {
+	for _, notifyFailures := range []int{0, 1} {
+		t.Run(fmt.Sprintf("notify failures %d", notifyFailures), func(t *testing.T) {
+			proxy, reg, path, read := fakeWatchdogRecoveryState(t)
+			foreign := RawRegistryValue{Exists: true, Type: registry.SZ, Data: registryStringBytes("http=foreign.test:8080")}
+			reg.values[fakeValueKey(userProxyRegistryKey, "ProxyServer")] = foreign
+			notifications, pauses := 0, 0
+			proxy.notify = func() error {
+				notifications++
+				if notifications <= notifyFailures {
+					return errors.New("transient notification failure")
+				}
+				return nil
+			}
+			err := restoreProxyLeaseAfterWatchEnd(proxy, "lease-retry", read, func() (func(), error) { return func() {}, nil }, func(time.Duration) { pauses++ })
+			if err == nil {
+				t.Fatal("selective restoration conflict was reported as success")
+			}
+			if pauses != notifyFailures || notifications != notifyFailures+1 {
+				t.Fatalf("completed restore retried: pauses=%d notifications=%d", pauses, notifications)
+			}
+			if !sameRegistryValue(reg.values[fakeValueKey(userProxyRegistryKey, "ProxyServer")], foreign) {
+				t.Fatal("foreign edit was overwritten")
+			}
+			if reg.values[fakeValueKey(userProxyRegistryKey, "ProxyEnable")].Exists {
+				t.Fatal("owned value was not restored")
+			}
+			if _, err = os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("completed restore retained journal: %v", err)
+			}
+		})
+	}
+}
+
 func TestWatchdogRecoverySkipsMissingOrSupersededLease(t *testing.T) {
 	proxy, reg, path, read := fakeWatchdogRecoveryState(t)
 	writes, pauses := len(reg.events), 0

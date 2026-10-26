@@ -96,9 +96,16 @@
 !/internal/platform/user_proxy_windows_test.go
 !/internal/platform/user_proxy_notify_windows_test.go
 !/internal/platform/user_proxy_lifecycle_windows_test.go
+!/internal/platform/user_proxy_registry_acceptance_windows_test.go
+!/internal/platform/user_proxy_detachment_windows_test.go
+!/internal/platform/user_proxy_process_acceptance_windows_test.go
+!/internal/platform/user_proxy_live_acceptance_windows_test.go
 !/internal/platform/user_startup_windows_test.go
+!/internal/platform/user_startup_live_acceptance_windows_test.go
 !/internal/platform/user_network_windows_test.go
+!/internal/platform/lan_routes_windows_test.go
 !/internal/profiles/user_settings_windows_test.go
+!/internal/profiles/user_network_live_acceptance_windows_test.go
 
 !/internal/platform/user_automation_transaction_windows_test.go
 
@@ -136,3 +143,8 @@
 !/cmd/onetunnel-native-probe/main_windows_test.go
 
 !/internal/platform/proxy_probe_safety_windows_test.go
+
+!/internal/platform/statistics_acceptance_safety_windows_test.go
+
+!/internal/platform/https_probe_budget_windows_test.go
+!/internal/platform/reliability_acceptance_safety_windows_test.go

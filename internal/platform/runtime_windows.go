@@ -197,6 +197,8 @@ func (r *Runtime) sampleStatistics(now time.Time) {
 			r.statisticsAccumulator.ResetRateBaseline()
 			r.setStatistics(nil)
 		}
+	} else {
+		r.setStatistics(nil)
 	}
 }
 
@@ -793,6 +795,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 					return err
 				}
 			}
+		}
+		if err = prepareLANRoutes(c, request.FullDevice, p.Network); err != nil {
+			return err
 		}
 		if err = writeConfig(path, c); err != nil {
 			return err

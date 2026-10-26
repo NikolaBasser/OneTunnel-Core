@@ -397,6 +397,103 @@ func TestUserAutomaticAttemptsAreBoundedUntilExplicitRearmOrCategoryChange(t *te
 	}
 }
 
+func TestUserAutoConnectRechecksNetworkBeforePreparationAndStart(t *testing.T) {
+	for _, stage := range []string{"first status", "second status", "download"} {
+		for _, policy := range []string{"public forbidden", "unknown forbidden", "both allowed"} {
+			t.Run(stage+"/"+policy, func(t *testing.T) {
+				a, _, _, now, _ := automationFixture(t)
+				category := platform.UserNetworkTrusted
+				a.UserAutomation.NetworkCategory = func() platform.UserNetworkCategory { return category }
+				doc, err := a.Store.Load()
+				if err != nil {
+					t.Fatal(err)
+				}
+				doc.SubscriptionSources[doc.Profiles[0].Group] = "https://subscription.test/synthetic"
+				if err = a.Store.Save(doc); err != nil {
+					t.Fatal(err)
+				}
+				saveAutomation(t, a, UserPreferences{AutoConnect: true, ProfileID: doc.Profiles[0].ID, AllowTrusted: true, AllowPublic: policy == "both allowed"})
+				before := storeBytes(t, a.Store)
+				statuses, starts, downloads := 0, 0, 0
+				changed := false
+				change := func() {
+					if changed {
+						return
+					}
+					changed = true
+					category = platform.UserNetworkPublic
+					if policy == "unknown forbidden" {
+						category = "unknown"
+					}
+					// Ensure the old retry cooldown cannot conceal a missing debounce.
+					*now = now.Add(31 * time.Second)
+				}
+				a.ServiceCall = func(_ context.Context, r control.Request) (control.Response, int64, error) {
+					if r.Command == "status" {
+						statuses++
+						if stage == "first status" && statuses == 1 || stage == "second status" && statuses == 2 {
+							change()
+						}
+					} else if r.Command == "start" {
+						starts++
+					} else {
+						t.Fatalf("unexpected command %s", r.Command)
+					}
+					return control.Response{Version: 1, Instance: "synthetic", Revision: uint64(statuses + starts + 1)}, 1, nil
+				}
+				a.Downloader = func(context.Context, string) (ImportResult, error) {
+					downloads++
+					if stage == "download" {
+						change()
+					}
+					return ImportResult{}, errors.New("synthetic offline response")
+				}
+				if _, err = a.tickUserSettings(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				*now = now.Add(6 * time.Second)
+				if _, err = a.tickUserSettings(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				if !changed {
+					t.Fatal("transition injection did not run")
+				}
+				if starts != 0 {
+					t.Fatalf("automatic start after category transition: %d", starts)
+				}
+				wantDownloads := 0
+				if stage == "download" {
+					wantDownloads = 1
+				}
+				if downloads != wantDownloads {
+					t.Fatalf("downloads=%d want=%d", downloads, wantDownloads)
+				}
+				if !reflect.DeepEqual(before, storeBytes(t, a.Store)) {
+					t.Fatal("aborted attempt changed storage")
+				}
+				*now = now.Add(4 * time.Second)
+				if _, err = a.tickUserSettings(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				if starts != 0 {
+					t.Fatal("category stability delay bypassed")
+				}
+				*now = now.Add(2 * time.Second)
+				if _, err = a.tickUserSettings(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				wantStarts := 0
+				if policy == "both allowed" {
+					wantStarts = 1
+				}
+				if starts != wantStarts {
+					t.Fatalf("stable-category starts=%d want=%d", starts, wantStarts)
+				}
+			})
+		}
+	}
+}
+
 func TestUnreconciledProxyBlocksPreferenceDisableAndBackupApply(t *testing.T) {
 	a, proxy, _, _, _ := automationFixture(t)
 	saveAutomation(t, a, UserPreferences{UseSystemProxy: true})

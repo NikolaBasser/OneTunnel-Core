@@ -984,6 +984,7 @@ func restoreProxyLeaseAfterWatchEnd(proxy *UserProxy, lease string, readJournal 
 	}
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
+		completed := false
 		unlock, err := acquireLock()
 		if err != nil {
 			lastErr = err
@@ -1009,14 +1010,15 @@ func restoreProxyLeaseAfterWatchEnd(proxy *UserProxy, lease string, readJournal 
 				if removeErr := os.Remove(proxy.journalPath); removeErr != nil && !os.IsNotExist(removeErr) {
 					return removeErr
 				}
+				completed = true
 				if conflict {
 					return fmt.Errorf("proxy settings were changed externally; owned values restored selectively")
 				}
 				return nil
 			}()
 		}
-		if lastErr == nil {
-			return nil
+		if lastErr == nil || completed {
+			return lastErr
 		}
 		if attempt+1 < attempts {
 			pause(time.Second)
