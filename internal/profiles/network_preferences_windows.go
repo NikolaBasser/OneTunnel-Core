@@ -1,7 +1,10 @@
 package profiles
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 
@@ -39,7 +42,26 @@ func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 	} else if input.ServerIP != "" || input.ServerName != "" || input.Port != "" || input.Path != "" {
 		return nil, protocol.ErrConfiguration
 	}
-	if strings.TrimSpace(input.RulesText) != "" {
+	if strings.HasPrefix(strings.TrimSpace(input.RulesText), "{") {
+		if len(input.RulesText) > 1024*1024 {
+			return nil, protocol.ErrConfiguration
+		}
+		var policy struct {
+			Rules    []protocol.NetworkRule
+			Targets  []protocol.PolicyTarget
+			RuleSets []protocol.RuleSet
+		}
+		decoder := json.NewDecoder(bytes.NewBufferString(input.RulesText))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&policy) != nil {
+			return nil, protocol.ErrConfiguration
+		}
+		var trailing any
+		if decoder.Decode(&trailing) != io.EOF {
+			return nil, protocol.ErrConfiguration
+		}
+		options.Rules, options.Targets, options.RuleSets = policy.Rules, policy.Targets, policy.RuleSets
+	} else if strings.TrimSpace(input.RulesText) != "" {
 		for _, raw := range strings.Split(input.RulesText, "\n") {
 			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
 			if line == "" {
@@ -143,6 +165,23 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 				view.DNSRulesText += rule.Kind + " | " + rule.Value + " | " + strconv.Itoa(rule.ResolverIndex+1) + "\n"
 			}
 		}
+		if dns := profile.Network; dns != nil {
+			advanced := len(dns.Targets) > 0 || len(dns.RuleSets) > 0
+			for _, rule := range dns.Rules {
+				advanced = advanced || rule.Port != "" || rule.Network != "" || rule.Process != "" || rule.Outbound != ""
+			}
+			if advanced {
+				data, err := json.MarshalIndent(struct {
+					Rules    []protocol.NetworkRule
+					Targets  []protocol.PolicyTarget `json:"Targets,omitempty"`
+					RuleSets []protocol.RuleSet      `json:"RuleSets,omitempty"`
+				}{dns.Rules, dns.Targets, dns.RuleSets}, "", "  ")
+				if err != nil {
+					return NetworkPreferencesView{}, err
+				}
+				view.RulesText = string(data)
+			}
+		}
 		if !view.Supported {
 			view.Message = "Network preferences require a supported full-device profile."
 		} else if profile.Protocol < 2 {
@@ -191,4 +230,31 @@ func (a *Application) saveNetworkPreferences(r Request) (Document, error) {
 		return presentationDocument(doc), nil
 	}
 	return Document{}, errors.New("profile unavailable")
+}
+
+func (a *Application) analyzeNetwork(id string, query *protocol.RouteQuery) (any, error) {
+	if a == nil || a.Store == nil {
+		return nil, errors.New("profile library unavailable")
+	}
+	doc, err := a.Store.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range doc.Profiles {
+		if p.ID != id {
+			continue
+		}
+		if err := Validate(p); err != nil {
+			return nil, err
+		}
+		analysis, err := protocol.AnalyzeNetwork(p.Network)
+		if err != nil {
+			return nil, err
+		}
+		if query == nil {
+			return analysis, nil
+		}
+		return protocol.ExplainRoute(p.Network, *query)
+	}
+	return nil, errors.New("profile unavailable")
 }

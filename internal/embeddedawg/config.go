@@ -6,9 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"net"
 	"net/netip"
-	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"strconv"
 	"strings"
 )
@@ -125,6 +125,23 @@ func (p *Plan) UAPI() ([]byte, error) {
 	for _, field := range []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5"} {
 		if value := p.values["i"+field]; value != "" {
 			write(field, value)
+		}
+	}
+	for field, uapi := range map[string]string{"contentpaddingaddition": "content_padding_addition", "rekeyaftertime": "rekey_after_time", "rekeytimeout": "rekey_timeout", "rejectaftertime": "reject_after_time", "keepalivetimeout": "keepalive_timeout", "maxhandshakeattempts": "max_handshake_attempts"} {
+		if value := p.values["i"+field]; value != "" {
+			write(uapi, value)
+		}
+	}
+	if p.values["iheaderprotectionkey"] != "" {
+		value, err := key("iheaderprotectionkey")
+		if err != nil {
+			return nil, err
+		}
+		write("header_protection_key", value)
+	}
+	for field, uapi := range map[string]string{"randomtrailers": "random_trailers", "disablecookies": "disable_cookies"} {
+		if value := strings.ToLower(p.values["i"+field]); value != "" {
+			write(uapi, strconv.FormatBool(value == "on" || value == "true"))
 		}
 	}
 	write("replace_peers", "true")

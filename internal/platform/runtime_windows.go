@@ -796,6 +796,22 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 				}
 			}
 		}
+		for _, raw := range jArray(c["outbounds"]) {
+			out := jObject(raw)
+			if strings.HasPrefix(jString(out["tag"]), "onetunnel-target-") {
+				out["server"], err = resolveEndpoint(ctx, jString(out["server"]))
+				if err != nil {
+					return err
+				}
+				if request.FullDevice {
+					name, e := routeInterface(jString(out["server"]))
+					if e != nil {
+						return e
+					}
+					out["bind_interface"] = name
+				}
+			}
+		}
 		if err = prepareLANRoutes(c, request.FullDevice, p.Network); err != nil {
 			return err
 		}

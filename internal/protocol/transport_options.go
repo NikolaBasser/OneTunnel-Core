@@ -195,27 +195,14 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 		}
 	}
 	for _, rule := range normalized.Rules {
-		var matcher string
-		switch rule.Kind {
-		case "domain":
-			matcher = "domain"
-		case "domain-suffix":
-			matcher = "domain_suffix"
-		case "cidr":
-			matcher = "ip_cidr"
-		case "process":
-			matcher = "process_path_regex"
-		}
-		matchValue := rule.Value
-		if rule.Kind == "process" {
-			matchValue = windowsProcessRegex(rule.Value)
-		}
-		value := []any{matchValue}
-		entry := object{matcher: value}
+		entry := matcher(rule)
 		if rule.Action == "reject" {
 			entry["action"] = "reject"
 		} else {
 			entry["action"], entry["outbound"] = "route", rule.Action
+			if rule.Outbound != "" {
+				entry["outbound"] = policyTag(rule.Outbound)
+			}
 		}
 		rules = append(rules, entry)
 	}
@@ -231,10 +218,13 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 		outbounds = append(outbounds, object{"type": "direct", "tag": "direct"})
 		config["outbounds"] = outbounds
 	}
-	if hasDomainRule(normalized.Rules) || len(normalized.DNSRules) > 0 {
+	if hasDomainRule(normalized.Rules) || len(normalized.RuleSets) > 0 || len(normalized.DNSRules) > 0 {
 		dns := obj(config["dns"])
 		dns["reverse_mapping"] = true
 		config["dns"] = dns
+	}
+	if err := appendPolicy(config, &p, normalized); err != nil {
+		return Plan{}, err
 	}
 	data, err := json.Marshal(config)
 	if err != nil {

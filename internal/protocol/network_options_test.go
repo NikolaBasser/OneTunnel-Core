@@ -91,7 +91,7 @@ func TestNetworkOptionsValidationBoundaries(t *testing.T) {
 			t.Errorf("accepted process path %q", path)
 		}
 	}
-	for _, rule := range []NetworkRule{{"domain", "*.example.com", "proxy"}, {"domain", "https://example.com", "proxy"}, {"cidr", "fe80::1%1/64", "direct"}, {"domain-suffix", "münich.example", "direct"}, {"process", `C:\a.exe`, "oops"}, {"process", ` C:\Windows\app.exe`, "reject"}} {
+	for _, rule := range []NetworkRule{{Kind: "domain", Value: "*.example.com", Action: "proxy"}, {Kind: "domain", Value: "https://example.com", Action: "proxy"}, {Kind: "cidr", Value: "fe80::1%1/64", Action: "direct"}, {Kind: "domain-suffix", Value: "münich.example", Action: "direct"}, {Kind: "process", Value: `C:\a.exe`, Action: "oops"}, {Kind: "process", Value: ` C:\Windows\app.exe`, Action: "reject"}} {
 		if _, err := NormalizeNetworkOptions(&NetworkOptions{Rules: []NetworkRule{rule}}); err == nil {
 			t.Errorf("accepted invalid rule %+v", rule)
 		}

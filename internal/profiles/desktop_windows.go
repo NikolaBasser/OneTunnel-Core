@@ -213,6 +213,11 @@ func presentationDocument(document Document) Document {
 	view.FavoriteIDs = normalizeFavoriteIDs(document.FavoriteIDs, document.Profiles)
 	for i := range view.Profiles {
 		view.Profiles[i].Network = protocol.CloneNetworkOptions(document.Profiles[i].Network)
+		if view.Profiles[i].Network != nil {
+			for j := range view.Profiles[i].Network.Targets {
+				view.Profiles[i].Network.Targets[j].Source = ""
+			}
+		}
 		view.Profiles[i].Source = ""
 	}
 	view.SubscriptionSources = map[string]string{}
@@ -224,6 +229,11 @@ func presentationApplied(applied Applied) Applied {
 	if view.Selected != nil {
 		p := *view.Selected
 		p.Network = protocol.CloneNetworkOptions(view.Selected.Network)
+		if p.Network != nil {
+			for i := range p.Network.Targets {
+				p.Network.Targets[i].Source = ""
+			}
+		}
 		p.Source = ""
 		view.Selected = &p
 	}

@@ -217,3 +217,40 @@ opt-in automatic-connection behavior. The machine-local inhibition record is
 excluded from portable backups; inability to confirm the UI session inhibits
 automatic connection. Scoped IPv6 UDP destinations are rejected by the native
 transport rather than silently losing their interface zone.
+
+Advanced policy snapshots accept up to eight additional engine-native proxy
+targets and sixteen inline rule sets (4096 members per set, 8192 total). A target
+contains `Name`, `Protocol` and an explicit `Source` snapshot; sources remain in
+the encrypted profile store and portable encrypted backups. Ordinary list and
+operation responses redact target sources. Explicit network-editor requests
+include them, so treat advanced editor text as credentials.
+
+Rules retain first-match order. `Kind` may also be `port`, `network` or `rule-set`;
+optional `Port`, `Network` and absolute Windows `Process` predicates are combined
+with AND. Set members (`domain`, `domain-suffix`, `cidr`) use OR. `Outbound` selects
+a named target for a `proxy` rule. Port values are single ports or closed ranges,
+and network values are `tcp`/`udp`. References and limits are validated before
+network mutation. Targets requiring another Xray instance or native OS tunnel
+are rejected; primary profile engine support is unchanged. Sets are portable
+inline snapshots, without automatic remote fetching or filesystem references.
+
+The existing desktop rules editor accepts either legacy pipe-separated lines or
+a strict JSON object containing `Rules`, `Targets` and `RuleSets`. For example:
+
+```json
+{"Targets":[{"Name":"work","Protocol":3,"Source":"socks5://127.0.0.1:1080"}],"RuleSets":[{"Name":"sites","Members":[{"Kind":"domain-suffix","Value":"example.com"}]}],"Rules":[{"Kind":"rule-set","Value":"sites","Action":"proxy","Outbound":"work","Network":"tcp","Port":"443"}]}
+```
+
+SDK `AnalyzeNetwork` reports identical shadowed matches; `ExplainRoute` predicts
+first-match routing using supplied destination/process metadata. User-host
+commands `network.analyze` and `network.explain` accept a profile `ID`; the latter
+also accepts `PolicyQuery` (`Domain`, `IP`, `Process`, `Network`, `Port`). These APIs
+do not open sockets, resolve names or return target credentials. Predictions are
+explicitly marked `PredictionOnly`; missing required metadata returns `unknown`.
+Port 53 is reserved for the configured TUN DNS policy. Predictions do not certify
+the observed OS route, reachability or absence of leaks.
+
+AmneziaWG imports preserve AWG 3.1 header protection, content-padding ranges,
+handshake/rekey/keepalive ranges, random trailers and cookie settings through the
+embedded device UAPI. Nonzero header keys require all four packet padding sizes
+to be at least twelve bytes. WireGuard rejects these AWG-only fields.
