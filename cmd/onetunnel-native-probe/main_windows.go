@@ -15,13 +15,16 @@ import (
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/profiles"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"golang.org/x/sys/windows"
 )
 
 func main() {
 	data := flag.String("data", "", "existing isolated encrypted profile-copy directory")
+	scope := flag.String("scope", "native", "native or proxy group checks")
+	offset := flag.Int("offset", 0, "skip this many eligible proxy profiles")
 	flag.Parse()
-	if flag.NArg() != 0 {
+	if flag.NArg() != 0 || validateProbeScopeOffset(*scope, *offset) != nil {
 		fail()
 	}
 	base, err := windows.KnownFolderPath(windows.FOLDERID_LocalAppData, 0)
@@ -40,16 +43,65 @@ func main() {
 	if err != nil {
 		fail()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	budget := 180 * time.Second
+	if *scope == "proxy" {
+		budget = 420 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
-	result := probeProfiles(ctx, document.Profiles, platform.ProbeNativeDNSForAcceptance)
+	var result []protocolResult
+	if *scope == "native" {
+		result = probeProfiles(ctx, document.Profiles, platform.ProbeNativeDNSForAcceptance)
+	} else {
+		items, err := filterProxyProfilesFromOffset(document.Profiles, *offset)
+		if err != nil {
+			fail()
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			fail()
+		}
+		result = probeProxyProfiles(ctx, items, func(ctx context.Context, profile profiles.Profile) platform.ProxyAcceptanceCheck {
+			return platform.ProbeProxyForAcceptance(ctx, filepath.Dir(executable), profile)
+		})
+	}
 	if json.NewEncoder(os.Stdout).Encode(result) != nil {
 		fail()
 	}
+	if *scope == "proxy" {
+		if ctx.Err() != nil {
+			fail()
+		}
+		for _, row := range result {
+			if row.CleanupError != 0 || row.CheckCompleted != row.Count {
+				fail()
+			}
+		}
+	}
+}
+
+func validateProbeScopeOffset(scope string, offset int) error {
+	if (scope != "native" && scope != "proxy") || offset < 0 || (scope != "proxy" && offset != 0) {
+		return errors.New("invalid probe scope or offset")
+	}
+	return nil
+}
+
+func filterProxyProfilesFromOffset(items []profiles.Profile, offset int) ([]profiles.Profile, error) {
+	eligible := make([]profiles.Profile, 0, len(items))
+	for _, item := range items {
+		if item.Protocol >= 2 && item.Protocol < len(protocol.Names) {
+			eligible = append(eligible, item)
+		}
+	}
+	if offset < 0 || offset > len(eligible) {
+		return nil, errors.New("proxy offset exceeds eligible profiles")
+	}
+	return eligible[offset:], nil
 }
 
 func fail() {
-	fmt.Fprintln(os.Stderr, "Native DNS acceptance could not complete; no profile details are reported.")
+	fmt.Fprintln(os.Stderr, "Isolated acceptance could not complete; no profile details are reported.")
 	os.Exit(1)
 }
 
@@ -110,9 +162,53 @@ func validateDataRoot(root, forbidden string) (string, error) {
 }
 
 type protocolResult struct {
-	Protocol                  string
-	Count, Attempted, Success int
-	DNSLatencyMilliseconds    []int64 `json:",omitempty"`
+	Protocol                     string
+	Count, Attempted, Success    int
+	DNSLatencyMilliseconds       []int64 `json:",omitempty"`
+	HTTPSLatencyMilliseconds     []int64 `json:",omitempty"`
+	CheckCompleted, CleanupError int     `json:",omitempty"`
+}
+
+func probeProxyProfiles(ctx context.Context, items []profiles.Profile, probe func(context.Context, profiles.Profile) platform.ProxyAcceptanceCheck) []protocolResult {
+	rows := make([]protocolResult, len(protocol.Names)-2)
+	for i := range rows {
+		rows[i].Protocol = protocol.Names[i+2]
+	}
+	for _, item := range items {
+		if item.Protocol >= 2 && item.Protocol < len(protocol.Names) {
+			rows[item.Protocol-2].Count++
+		}
+	}
+	considered := 0
+	for _, item := range items {
+		if item.Protocol < 2 || item.Protocol >= len(protocol.Names) {
+			continue
+		}
+		if considered == 32 || ctx.Err() != nil {
+			break
+		}
+		considered++
+		deadline, cancel := context.WithTimeout(ctx, 30*time.Second)
+		check := probe(deadline, item)
+		canceled := deadline.Err() != nil
+		cancel()
+		row := &rows[item.Protocol-2]
+		if check.CleanupError {
+			row.CleanupError++
+			break
+		}
+		if check.CheckCompleted {
+			row.CheckCompleted++
+		}
+		if check.NetworkTest {
+			row.Attempted++
+		}
+		if check.CheckCompleted && check.NetworkTest && check.Success && !canceled && check.HTTPSLatencyMilliseconds != nil && *check.HTTPSLatencyMilliseconds >= 0 {
+			row.Success++
+			row.HTTPSLatencyMilliseconds = append(row.HTTPSLatencyMilliseconds, *check.HTTPSLatencyMilliseconds)
+		}
+	}
+	return rows
 }
 
 type nativeProbe func(context.Context, string, int) (bool, *int64, error)

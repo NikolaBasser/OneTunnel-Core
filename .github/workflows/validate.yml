@@ -60,7 +60,7 @@ jobs:
       - name: Test acceptance guard without network effects
         run: >-
           go test -mod=readonly -count=1 -tags onetunnel_safety_test
-          -run 'TestAcceptance|TestRecovery'
+          -run 'TestAcceptance|TestRecovery|TestProxyAcceptance'
           ./cmd/onetunnel-acceptance ./internal/platform
       - name: Test isolated native probe with synthetic data
         run: >-
