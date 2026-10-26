@@ -614,6 +614,30 @@ func (a *Application) tickUserSettings(ctx context.Context) (UserSettingsTick, e
 	return done("Automatic connection was requested through the normal Go controller.", &reply)
 }
 
+// Recheck after blocking preparation/status calls, before their next network effect.
+func (a *Application) recheckAutoConnectNetwork(prefs UserPreferences) error {
+	u := a.automation()
+	category := u.NetworkCategory()
+	if category != platform.UserNetworkTrusted {
+		category = platform.UserNetworkPublic
+	}
+	now := a.now()
+	if category != u.category || u.categorySince.IsZero() || now.Before(u.categorySince) {
+		if category != u.category {
+			u.attempts = 0
+		}
+		u.category = category
+		u.categorySince = now
+		return errUserSettings
+	}
+	if now.Sub(u.categorySince) < 5*time.Second ||
+		category == platform.UserNetworkTrusted && !prefs.AllowTrusted ||
+		category == platform.UserNetworkPublic && !prefs.AllowPublic {
+		return errUserSettings
+	}
+	return nil
+}
+
 func (a *Application) enableUserStartup(executable, token string) (UserSettingsView, error) {
 	if a == nil || a.Store == nil {
 		return UserSettingsView{}, errUserSettings

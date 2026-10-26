@@ -152,6 +152,11 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			before.Message = platform.ServiceErrorMessage(code)
 			return before, nil
 		}
+		if r.autoConnectPreferences != nil {
+			if err := a.recheckAutoConnectNetwork(*r.autoConnectPreferences); err != nil {
+				return nil, err
+			}
+		}
 		prepared, err := a.Prepare(ctx, r.ID)
 		if err != nil {
 			return nil, err
@@ -174,6 +179,9 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 				if err != nil || preferencesValue(current.UserSettings) != *r.autoConnectPreferences ||
 					!preferencesValue(current.UserSettings).AutoConnect || u.inhibited || u.inhibitionErr != nil {
 					return errUserSettings
+				}
+				if err := a.recheckAutoConnectNetwork(*r.autoConnectPreferences); err != nil {
+					return err
 				}
 				reply = a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
 				return nil
