@@ -1,0 +1,38 @@
+OneTunnel offline emergency recovery
+
+Run Start-Recovery.cmd and accept the Windows administrator prompt.
+The standalone executable needs no installed OneTunnel service, Go, .NET
+runtime, downloads, subscription, profile, marker, or journal. Windows x64
+and ARM64 binaries are included. Windows native WFP/BFE must be available.
+
+Manual commands, in an administrator terminal:
+  OneTunnel.Recover.exe --scan
+  OneTunnel.Recover.exe --recover-all --stop-service
+  OneTunnel.Recover.exe --provider "{GUID}" --stop-service
+
+With no arguments, the executable only inventories OneTunnel providers.
+Recovery stops only OneTunnelCore when requested. If it is running and the
+stop option was omitted, recovery refuses to remove protection.
+
+Recovery verifies the exact OneTunnel provider name, persistent metadata,
+related sublayers, supported layers, known rule names, action, weight and
+condition counts. Provider selection is explicit; the all option selects
+all matching OneTunnel providers. All selected objects are removed in one
+WFP transaction, filters first, sublayers second, providers last. Any API
+failure aborts the transaction. Ambiguous shapes are refused.
+
+The 32-byte RootFingerprint in inventory is a digest of a historical runtime
+directory, not a secret key. Emergency removal intentionally does not require
+that directory or its files to survive. Matching metadata is an identification
+check, not cryptographic authentication against a local administrator who can
+forge WFP metadata. No foreign provider is selected by similar name alone.
+
+Removing protection permits direct traffic. The tool does not reconnect VPN,
+change DNS/routes/proxy, delete profiles, disable Windows Firewall/BFE, reset
+Winsock, restart Windows, or reinstall networking. It does not certify internet
+access, DNS safety, or IPv6 reachability. Active-test launchers must not be used
+until the failed watchdog design has been corrected and separately reviewed.
+
+The launcher logs to %LOCALAPPDATA%\OneTunnel-Recovery. The executable itself
+prints only inventory/status and makes no network requests. If recovery fails,
+keep the log and inventory; do not delete unrelated WFP providers.

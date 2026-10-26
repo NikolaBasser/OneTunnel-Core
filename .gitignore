@@ -119,3 +119,4 @@
 !/internal/platform/native_shared_windows_test.go
 !/internal/platform/runtime_safety_active_windows_test.go
 !/internal/profiles/native_network_preferences_windows_test.go
+!/internal/platform/emergency_wfp_windows_test.go

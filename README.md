@@ -169,3 +169,12 @@ routing, DNS and ICMP. Resolver addresses must fit peer coverage/address familie
 Native policy health checks an uncached encrypted DNS exchange rather than public
 HTTPS; success does not certify arbitrary public access or absence of leaks.
 Shared-native statistics use TUN ingress scope, without adding AWG wire counters.
+Offline Windows recovery is built separately with `build-recovery.ps1 -Output
+<new-directory> -GoExecutable <go.exe> -Offline` when the toolchain/modules are
+already cached. The resulting `OneTunnel.Recover.exe` runs without Go, .NET,
+OneTunnel installation or internet. Default/`--scan` is read-only; explicit
+`--recover-all --stop-service` stops OneTunnelCore and transactionally removes
+validated OneTunnel persistent WFP objects. `--provider "{GUID}"` targets one
+provider. Recovery does not require markers, journals or historical runtime roots
+and never resets Windows Firewall or removes unrelated providers. It removes VPN
+traffic protection; see recovery/RECOVERY.txt and recovery/AUDIT.txt for scope.
