@@ -112,6 +112,8 @@ server-name bootstrap uses the fixed encrypted infrastructure path, separately
 from the custom tunneled resolver. Native AWG/WG with empty preferences retain imported DNS/AllowedIPs;
 nonempty full-device policies use the shared TUN; local mode is rejected. A matching new
 service build is required; an old strict service refuses unsupported fields.
+Whole-device startup refreshes the interface snapshot before becoming ready so
+executable-path rules apply to the first TUN connection.
 
 Portable backups use password-derived authenticated encryption and include profile,
 network, favorite, group and subscription settings. Restore previews a complete
@@ -159,6 +161,11 @@ created test keys, including typed restoration, external edits, partial-write
 rollback and loopback-listener loss. They never activate the user's system proxy
 or notify WinINET; actual WinINET switching and detached-watchdog acceptance
 remain separate checks.
+Opt-in dedicated-server acceptance additionally covers real WinINET activation,
+production watcher recovery after listener/owner loss, startup registration and
+Windows network-category transitions. These tests require explicit build tags
+and host guards; they do not run in the default suite. Category-controller tests
+use synthetic session/timing inputs and do not certify Windows logon or sleep.
 
 Group checks report total check duration separately from successful HTTPS probe
 latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
