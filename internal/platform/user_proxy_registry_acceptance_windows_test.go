@@ -177,6 +177,23 @@ func TestUserProxyRegistryAcceptanceIsolated(t *testing.T) {
 		assertJournalAbsent(t, p)
 		assertNotificationCount(t, p, 1)
 	})
+	t.Run("watchdog reports selective restore conflict", func(t *testing.T) {
+		r := newIsolatedProxyRegistry(t)
+		p := newAcceptanceProxy(t, r)
+		lease := enableAcceptanceLease(t, p)
+		foreign := RawRegistryValue{Exists: true, Type: registry.SZ, Data: registryStringBytes("http=foreign.test:8080")}
+		if err := (windowsUserRegistry{}).Write(r.leaf, "ProxyServer", foreign); err != nil {
+			t.Fatal(err)
+		}
+		pauses := 0
+		err := restoreProxyLeaseAfterWatchEnd(p.UserProxy, lease, p.readJournal, p.userAutomationLock, func(time.Duration) { pauses++ })
+		if err == nil || pauses != 0 {
+			t.Fatalf("selective restore conflict lost or retried: err=%v pauses=%d", err, pauses)
+		}
+		assertIsolatedBaseline(t, r, map[string]RawRegistryValue{"ProxyServer": foreign})
+		assertJournalAbsent(t, p)
+		assertNotificationCount(t, p, 2)
+	})
 	t.Run("real listener loss restores lease", func(t *testing.T) {
 		r := newIsolatedProxyRegistry(t)
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
