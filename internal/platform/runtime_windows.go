@@ -197,6 +197,8 @@ func (r *Runtime) sampleStatistics(now time.Time) {
 			r.statisticsAccumulator.ResetRateBaseline()
 			r.setStatistics(nil)
 		}
+	} else {
+		r.setStatistics(nil)
 	}
 }
 

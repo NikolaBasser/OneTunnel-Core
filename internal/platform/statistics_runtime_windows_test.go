@@ -84,3 +84,17 @@ func TestEmbeddedStatisticsProviderIsSelectedForNewAttempt(t *testing.T) {
 		t.Fatalf("provider view: %+v", view)
 	}
 }
+
+func TestDisconnectedStatisticsSourceClearsLastSessionProjection(t *testing.T) {
+	r := &Runtime{statisticsProvider: testStatisticsEngine{}}
+	r.sampleStatistics(time.Now())
+	if r.state.Statistics == nil {
+		t.Fatal("active session statistics missing")
+	}
+	// Successful disconnect drops the provider before publishing its stopped state.
+	r.statisticsProvider = nil
+	r.sampleStatistics(time.Now().Add(time.Second))
+	if r.state.Statistics != nil {
+		t.Fatal("disconnected session retained stale statistics")
+	}
+}
