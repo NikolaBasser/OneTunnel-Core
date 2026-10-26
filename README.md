@@ -154,6 +154,12 @@ reported; machine WinHTTP is never modified. Closing the user host releases its
 proxy lease without stopping the VPN service. Portable restore disables automatic
 activation and excludes machine startup ownership.
 
+Windows acceptance tests exercise real registry APIs and DPAPI under exclusively
+created test keys, including typed restoration, external edits, partial-write
+rollback and loopback-listener loss. They never activate the user's system proxy
+or notify WinINET; actual WinINET switching and detached-watchdog acceptance
+remain separate checks.
+
 Group checks report total check duration separately from successful HTTPS probe
 latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
 Saved shared-TUN DNS/routing policies are validated, then left unapplied during

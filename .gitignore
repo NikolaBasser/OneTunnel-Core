@@ -96,6 +96,7 @@
 !/internal/platform/user_proxy_windows_test.go
 !/internal/platform/user_proxy_notify_windows_test.go
 !/internal/platform/user_proxy_lifecycle_windows_test.go
+!/internal/platform/user_proxy_registry_acceptance_windows_test.go
 !/internal/platform/user_startup_windows_test.go
 !/internal/platform/user_network_windows_test.go
 !/internal/profiles/user_settings_windows_test.go
