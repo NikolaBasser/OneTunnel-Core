@@ -133,3 +133,4 @@
 !/internal/platform/acceptance_permit_safety_windows_test.go
 
 !/cmd/onetunnel-acceptance/plan_windows_test.go
+!/cmd/onetunnel-native-probe/main_windows_test.go

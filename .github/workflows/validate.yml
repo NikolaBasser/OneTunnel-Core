@@ -62,6 +62,10 @@ jobs:
           go test -mod=readonly -count=1 -tags onetunnel_safety_test
           -run 'TestAcceptance|TestRecovery'
           ./cmd/onetunnel-acceptance ./internal/platform
+      - name: Test isolated native probe with synthetic data
+        run: >-
+          go test -mod=readonly -count=1 -tags onetunnel_safety_test,embeddedawg
+          ./cmd/onetunnel-native-probe
       - name: Verify clean bundle identity
         run: |
           $manifest = Get-Content artifacts/core-bundle/core-bundle.json -Raw | ConvertFrom-Json
