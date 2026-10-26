@@ -178,3 +178,15 @@ validated OneTunnel persistent WFP objects. `--provider "{GUID}"` targets one
 provider. Recovery does not require markers, journals or historical runtime roots
 and never resets Windows Firewall or removes unrelated providers. It removes VPN
 traffic protection; see recovery/RECOVERY.txt and recovery/AUDIT.txt for scope.
+
+Normal Windows service Stop/Shutdown closes and drains the control pipe before
+recovering the owned connection and removing its WFP policy. An unexpected exit
+retains persistent traffic protection. Failed ownership checks or cleanup keep
+protection and report a failure; the standalone offline recovery tool remains
+available. A missing local marker never suppresses owner-scoped WFP cleanup.
+Manual disconnect/recovery inhibits automatic connection for the current UI
+session, including profile-worker restarts. A new UI session keeps the existing
+opt-in automatic-connection behavior. The machine-local inhibition record is
+excluded from portable backups; inability to confirm the UI session inhibits
+automatic connection. Scoped IPv6 UDP destinations are rejected by the native
+transport rather than silently losing their interface zone.

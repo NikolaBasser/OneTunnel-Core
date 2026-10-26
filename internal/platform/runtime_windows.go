@@ -256,7 +256,7 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 	case "stop":
 		r.retry = retryState{}
 		r.retrying = false
-		e = r.disconnect(ctx)
+		e = r.recover(ctx)
 	case "recover":
 		r.retry = retryState{}
 		r.retrying = false
@@ -1082,11 +1082,6 @@ func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
 				return e
 			}
 		}
-		if !retainLock {
-			if e := r.lock.remove(false); e != nil {
-				return e
-			}
-		}
 		r.session = nil
 		r.statisticsProvider = nil
 		r.statisticsNative = nil
@@ -1094,7 +1089,7 @@ func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
 		r.statisticsSessionID = ""
 	}
 	if !retainLock {
-		if e := r.lock.remove(false); e != nil {
+		if e := r.lock.remove(); e != nil {
 			return e
 		}
 	}
@@ -1158,9 +1153,6 @@ func (r *Runtime) recover(ctx context.Context) error {
 		r.session = &s
 	}
 	if e := r.disconnect(ctx); e != nil {
-		return e
-	}
-	if e := r.lock.remove(true); e != nil {
 		return e
 	}
 	files, e := os.ReadDir(filepath.Join(r.root, "runtime"))

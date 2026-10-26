@@ -45,7 +45,9 @@ func main() {
 		fail(err)
 	}
 	if !*all && *provider == "" {
-		_ = json.NewEncoder(os.Stdout).Encode(entries)
+		if err = json.NewEncoder(os.Stdout).Encode(entries); err != nil {
+			fail(err)
+		}
 		return
 	}
 	if *provider != "" {
@@ -106,10 +108,13 @@ func ensureCoreStopped(allowStop bool) error {
 	if !allowStop {
 		return fmt.Errorf("OneTunnelCore is running; use --stop-service before removing protection")
 	}
-	if _, err = s.Control(svc.Stop); err != nil && err != windows.ERROR_SERVICE_NOT_ACTIVE {
-		return err
+	if status.State != svc.StopPending {
+		if _, err = s.Control(svc.Stop); err != nil && err != windows.ERROR_SERVICE_NOT_ACTIVE {
+			return err
+		}
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	// Match the service's advertised drain/recovery window before touching WFP.
+	deadline := time.Now().Add(420 * time.Second)
 	for time.Now().Before(deadline) {
 		status, err = s.Query()
 		if err != nil {
@@ -120,5 +125,5 @@ func ensureCoreStopped(allowStop bool) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return fmt.Errorf("OneTunnelCore did not stop within 30 seconds; no filters removed")
+	return fmt.Errorf("OneTunnelCore did not stop within 420 seconds; no filters removed")
 }

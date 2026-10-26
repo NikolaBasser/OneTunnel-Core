@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -58,11 +59,15 @@ type UserAutomation struct {
 	ReadStartupOwner           func() (string, error)
 	WriteStartupOwner          func(string) error
 	Transaction                func(func() error) error
+	SessionIdentity            func() (string, error)
+	ReadInhibitedSession       func() (string, error)
+	WriteInhibitedSession      func(string) error
 	proxy                      userProxyLease
 	lease                      string
 	proxyAddress               string
 	initialized                bool
 	initializationErr          error
+	inhibitionErr              error
 	notice                     string
 	inhibited                  bool
 	category                   platform.UserNetworkCategory
@@ -96,7 +101,59 @@ func (a *Application) automation() *UserAutomation {
 	if u.WriteStartupOwner == nil {
 		u.WriteStartupOwner = func(value string) error { return writeStartupOwner(a.Store.Root, value) }
 	}
+	if u.SessionIdentity == nil {
+		u.SessionIdentity = profileHostSessionIdentity
+	}
+	if u.ReadInhibitedSession == nil {
+		u.ReadInhibitedSession = func() (string, error) {
+			state, err := readUserMachineOwnership(a.Store.Root)
+			return state.InhibitedSession, err
+		}
+	}
+	if u.WriteInhibitedSession == nil {
+		u.WriteInhibitedSession = func(session string) error {
+			state, err := readUserMachineOwnership(a.Store.Root)
+			if err != nil {
+				return err
+			}
+			state.InhibitedSession = session
+			return writeUserMachineOwnership(a.Store.Root, state)
+		}
+	}
 	return u
+}
+
+func profileHostSessionIdentity() (string, error) {
+	parent := os.Getppid()
+	if parent <= 0 {
+		return "", errUserSettings
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(parent))
+	if err != nil {
+		return "", errUserSettings
+	}
+	defer windows.CloseHandle(h)
+	var created, exited, kernel, user windows.Filetime
+	if windows.GetProcessTimes(h, &created, &exited, &kernel, &user) != nil {
+		return "", errUserSettings
+	}
+	var exitCode uint32
+	if windows.GetExitCodeProcess(h, &exitCode) != nil || exitCode != 259 || os.Getppid() != parent {
+		return "", errUserSettings
+	}
+	var ownCreated, ownExited, ownKernel, ownUser windows.Filetime
+	if windows.GetProcessTimes(windows.CurrentProcess(), &ownCreated, &ownExited, &ownKernel, &ownUser) != nil ||
+		uint64(created.HighDateTime)<<32|uint64(created.LowDateTime) > uint64(ownCreated.HighDateTime)<<32|uint64(ownCreated.LowDateTime) {
+		return "", errUserSettings
+	}
+	path := make([]uint16, 32768)
+	length := uint32(len(path))
+	self, err := os.Executable()
+	if err != nil || windows.QueryFullProcessImageName(h, 0, &path[0], &length) != nil ||
+		!strings.EqualFold(filepath.Clean(windows.UTF16ToString(path[:length])), filepath.Join(filepath.Dir(self), "OneTunnel.exe")) {
+		return "", errUserSettings
+	}
+	return fmt.Sprintf("%d:%d:%d", parent, created.HighDateTime, created.LowDateTime), nil
 }
 
 func normalizedUserPreferences(input *UserPreferences, doc Document) (*UserPreferences, error) {
@@ -205,10 +262,26 @@ func (a *Application) userSettingsView() (UserSettingsView, error) {
 	if u.notice != "" {
 		message += " " + u.notice
 	}
+	if u.inhibitionErr != nil {
+		message += " Automatic connection is unavailable because its UI session could not be confirmed."
+	}
 	return UserSettingsView{Preferences: prefs, Token: fmtHex(a.Store.revision[:]), NetworkCategory: string(category), CanSave: a.refreshAllowed(), ProxyEnabled: u.lease != "", AutoConnectInhibited: u.inhibited, StartupRecorded: owned != "", StartupEnabled: registered, CanEnableProxy: canProxy, CanDisableProxy: u.lease != "" || u.initializationErr != nil, CanEnableStartup: owned == "", CanDisableStartup: owned != "", Message: message}, nil
 }
 
 func (a *Application) saveUserSettings(token string, input *UserPreferences) (Document, error) {
+	if a == nil || a.Store == nil {
+		return Document{}, errUserSettings
+	}
+	var result Document
+	err := a.automation().Transaction(func() error {
+		var err error
+		result, err = a.saveUserSettingsLocked(token, input)
+		return err
+	})
+	return result, err
+}
+
+func (a *Application) saveUserSettingsLocked(token string, input *UserPreferences) (Document, error) {
 	if a == nil || a.Store == nil || input == nil || !a.refreshAllowed() {
 		return Document{}, errUserSettings
 	}
@@ -233,12 +306,24 @@ func (a *Application) saveUserSettings(token string, input *UserPreferences) (Do
 			return Document{}, errUserSettings
 		}
 	}
+	// Only a deliberate off->on change releases manual-disconnect inhibition.
+	if !old.AutoConnect && next.AutoConnect {
+		if session, err := u.SessionIdentity(); err != nil || session == "" {
+			u.inhibited = true
+			u.inhibitionErr = errUserSettings
+			return Document{}, errUserSettings
+		}
+		if err := u.WriteInhibitedSession(""); err != nil {
+			u.inhibited = true
+			return Document{}, errUserSettings
+		}
+	}
 	doc.UserSettings = normalized
 	if err := a.Store.Save(doc); err != nil {
 		return Document{}, errUserSettings
 	}
-	// Only a deliberate off->on change releases manual-disconnect inhibition.
 	if !old.AutoConnect && next.AutoConnect {
+		u.inhibitionErr = nil
 		u.inhibited = false
 		u.categorySince = time.Time{}
 		u.nextAttempt = time.Time{}
@@ -265,26 +350,36 @@ func (a *Application) enableUserProxy(ctx context.Context, token string) (UserSe
 	if u.initializationErr != nil {
 		return UserSettingsView{}, errUserSettings
 	}
-	if !u.initialized {
-		if err := a.initializeUserAutomation(); err != nil {
-			return UserSettingsView{}, errUserSettings
+	err = u.Transaction(func() error {
+		current, err := a.validateUserSettingsToken(token)
+		if err != nil || !preferencesValue(current.UserSettings).UseSystemProxy {
+			return errUserSettings
 		}
-	}
-	if u.lease != "" {
-		return a.userSettingsView()
-	}
-	if u.proxy == nil {
-		u.proxy, err = u.ProxyFactory()
+		if !u.initialized {
+			if err := a.initializeUserAutomation(); err != nil {
+				return errUserSettings
+			}
+		}
+		if u.lease != "" {
+			return nil
+		}
+		if u.proxy == nil {
+			u.proxy, err = u.ProxyFactory()
+			if err != nil {
+				return errUserSettings
+			}
+		}
+		lease, err := u.proxy.Enable(net.JoinHostPort("127.0.0.1", strconv.Itoa(s.LocalPort)))
 		if err != nil {
-			return UserSettingsView{}, errUserSettings
+			return errUserSettings
 		}
-	}
-	lease, err := u.proxy.Enable(net.JoinHostPort("127.0.0.1", strconv.Itoa(s.LocalPort)))
+		u.lease = lease
+		u.proxyAddress = net.JoinHostPort("127.0.0.1", strconv.Itoa(s.LocalPort))
+		return nil
+	})
 	if err != nil {
 		return UserSettingsView{}, errUserSettings
 	}
-	u.lease = lease
-	u.proxyAddress = net.JoinHostPort("127.0.0.1", strconv.Itoa(s.LocalPort))
 	return a.userSettingsView()
 }
 
@@ -366,8 +461,21 @@ func (a *Application) validateUserSettingsToken(token string) (Document, error) 
 
 // Called before an explicit stop/toggle-stop, never for internal retry cleanup.
 func (a *Application) inhibitUserAutoConnect() error {
-	a.automation().inhibited = true
-	return a.releaseUserProxy()
+	u := a.automation()
+	u.inhibited = true
+	durableErr := u.Transaction(func() error {
+		session, err := u.SessionIdentity()
+		if err != nil || session == "" {
+			u.inhibitionErr = errUserSettings
+			return errUserSettings
+		}
+		if err := u.WriteInhibitedSession(session); err != nil {
+			u.inhibitionErr = errUserSettings
+			return errUserSettings
+		}
+		return nil
+	})
+	return errors.Join(durableErr, a.releaseUserProxy())
 }
 
 // Reconcile before accepting automation commands. It never enables settings.
@@ -378,6 +486,21 @@ func (a *Application) initializeUserAutomation() error {
 	u := a.automation()
 	if u.initialized {
 		return nil
+	}
+	if err := u.Transaction(func() error {
+		session, err := u.SessionIdentity()
+		if err != nil || session == "" {
+			return errUserSettings
+		}
+		inhibitedSession, err := u.ReadInhibitedSession()
+		if err != nil {
+			return errUserSettings
+		}
+		u.inhibited = inhibitedSession == session
+		return nil
+	}); err != nil {
+		u.inhibited = true
+		u.inhibitionErr = errUserSettings
 	}
 	proxy, err := u.ProxyFactory()
 	if err != nil {
@@ -477,7 +600,7 @@ func (a *Application) tickUserSettings(ctx context.Context) (UserSettingsTick, e
 	u.attempted = true
 	u.attempts++
 	u.nextAttempt = now.Add(30 * time.Second)
-	value, err := a.desktop(ctx, Request{Version: 1, Command: "connection.start", ID: prefs.ProfileID, FullDevice: prefs.FullDevice})
+	value, err := a.desktop(ctx, Request{Version: 1, Command: "connection.start", ID: prefs.ProfileID, FullDevice: prefs.FullDevice, autoConnectPreferences: &prefs})
 	if err != nil {
 		return done("Automatic connection did not complete.", nil)
 	}
@@ -569,48 +692,62 @@ func (a *Application) disableUserStartup(token string) (UserSettingsView, error)
 }
 
 type userMachineOwnership struct {
-	Version        int
-	StartupCommand string
+	Version          int
+	StartupCommand   string
+	InhibitedSession string `json:",omitempty"`
 }
 
 func readStartupOwner(root string) (string, error) {
+	state, err := readUserMachineOwnership(root)
+	return state.StartupCommand, err
+}
+func readUserMachineOwnership(root string) (userMachineOwnership, error) {
 	path, err := backupPath(filepath.Join(root, "user-machine.bin"))
 	if err != nil {
-		return "", errUserSettings
+		return userMachineOwnership{}, errUserSettings
 	}
 	f, err := openBackupFile(path)
 	if os.IsNotExist(err) {
-		return "", nil
+		return userMachineOwnership{Version: 1}, nil
 	}
 	if err != nil {
 		if _, e := os.Lstat(path); os.IsNotExist(e) {
-			return "", nil
+			return userMachineOwnership{Version: 1}, nil
 		}
-		return "", errUserSettings
+		return userMachineOwnership{}, errUserSettings
 	}
 	defer f.Close()
 	encrypted, err := readBounded(f, 65536)
 	if err != nil {
-		return "", errUserSettings
+		return userMachineOwnership{}, errUserSettings
 	}
 	defer clear(encrypted)
 	plain, err := Protect(encrypted, false)
 	if err != nil {
-		return "", errUserSettings
+		return userMachineOwnership{}, errUserSettings
 	}
 	defer clear(plain)
 	var value userMachineOwnership
-	if json.Unmarshal(plain, &value) != nil || value.Version != 1 || len(value.StartupCommand) > 32767 {
-		return "", errUserSettings
+	if json.Unmarshal(plain, &value) != nil || value.Version != 1 || len(value.StartupCommand) > 32767 || len(value.InhibitedSession) > 128 {
+		return userMachineOwnership{}, errUserSettings
 	}
-	return value.StartupCommand, nil
+	return value, nil
 }
 func writeStartupOwner(root, value string) error {
+	state, err := readUserMachineOwnership(root)
+	if err != nil {
+		return err
+	}
+	state.StartupCommand = value
+	return writeUserMachineOwnership(root, state)
+}
+func writeUserMachineOwnership(root string, value userMachineOwnership) error {
 	path, err := backupPath(filepath.Join(root, "user-machine.bin"))
-	if err != nil || len(value) > 32767 {
+	if err != nil || len(value.StartupCommand) > 32767 || len(value.InhibitedSession) > 128 {
 		return errUserSettings
 	}
-	plain, err := json.Marshal(userMachineOwnership{Version: 1, StartupCommand: value})
+	value.Version = 1
+	plain, err := json.Marshal(value)
 	if err != nil {
 		return errUserSettings
 	}

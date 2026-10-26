@@ -414,7 +414,7 @@ func (p *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if ok {
 		ip = ip.Unmap()
 	}
-	if !ok || ip.IsUnspecified() || ip.Zone() != "" || udpAddr.Port < 1 || udpAddr.Port > 65535 {
+	if !ok || ip.IsUnspecified() || udpAddr.Zone != "" || udpAddr.Port < 1 || udpAddr.Port > 65535 {
 		return 0, errors.New("AWG UDP destination must be a literal IP address and valid port")
 	}
 	if !p.owner.covers(ip) {

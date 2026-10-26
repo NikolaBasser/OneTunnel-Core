@@ -21,6 +21,8 @@ import (
 )
 
 type Request struct {
+	autoConnectPreferences *UserPreferences
+
 	UserSettings     *UserPreferences
 	Executable       string
 	Reliability      *control.ReliabilityOptions

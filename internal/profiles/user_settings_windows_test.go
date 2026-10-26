@@ -64,6 +64,7 @@ func automationFixture(t *testing.T) (*Application, *fakeUserProxy, *fakeUserSta
 	a := &Application{Store: store, Directory: t.TempDir(), Now: func() time.Time { return now }, desktopContext: DesktopContext{StorageReady: true, SelectedID: p.ID}}
 	a.UserAutomation = &UserAutomation{NetworkCategory: func() platform.UserNetworkCategory { return platform.UserNetworkPublic }, ProxyFactory: func() (userProxyLease, error) { return proxy, nil }, Startup: startup, ReadStartupOwner: func() (string, error) { return owner, nil }, WriteStartupOwner: func(value string) error { owner = value; return nil }}
 	a.UserAutomation.Transaction = func(fn func() error) error { return fn() }
+	a.UserAutomation.SessionIdentity = func() (string, error) { return "synthetic-ui-session", nil }
 	a.ServiceCall = func(context.Context, control.Request) (control.Response, int64, error) {
 		t.Fatal("unexpected service call")
 		return control.Response{}, 0, nil

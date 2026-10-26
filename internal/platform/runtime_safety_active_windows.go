@@ -132,5 +132,5 @@ func ReleaseSafetyActiveLock(owner, root string) error {
 	if err = validateSafetyOwnerMarker(data, owner, root); err != nil {
 		return err
 	}
-	return (trafficLock{owner: owner, root: root}).remove(true)
+	return (trafficLock{owner: owner, root: root}).remove()
 }

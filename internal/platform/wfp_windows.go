@@ -83,6 +83,10 @@ func wCall(name string, args ...uintptr) error {
 	}
 	return nil
 }
+
+//go:uintptrescapes
+func callWFP(call wfpCallFunc, name string, args ...uintptr) error { return call(name, args...) }
+
 func wIgnored(e error, code uint32) bool { return e == nil || e == windows.Errno(code) }
 func wGuid(s string) windows.GUID {
 	g, e := windows.GUIDFromString("{" + s + "}")
@@ -307,22 +311,29 @@ func (t trafficLock) configure(interfaceName string, enginePaths []string, repla
 	committed = e == nil
 	return e
 }
-func (t trafficLock) remove(force bool) error {
-	if !t.needed() && !force {
-		return nil
-	}
-	h, e := openWFP()
+
+type wfpCallFunc func(string, ...uintptr) error
+
+func (t trafficLock) remove() error {
+	return t.removeWith(wCall, openWFP, os.Remove, lookupTrafficProvider, freeTrafficProvider)
+}
+
+// removeWith is split out so lifecycle tests can exercise owner checks and
+// marker-independent reconciliation without opening the system WFP engine.
+func (t trafficLock) removeWith(call wfpCallFunc, open func() (windows.Handle, error), removeFile func(string) error, lookup trafficProviderLookup, release trafficProviderFree) error {
+	// The marker is only a hint for UI/recovery state. Persistent policy can
+	// outlive it, so always reconcile this exact owner-derived provider.
+	h, e := open()
 	if e != nil {
 		return e
 	}
-	defer wCall("FwpmEngineClose0", uintptr(h))
+	defer callWFP(call, "FwpmEngineClose0", uintptr(h))
 	key := t.key("provider")
-	var pointer unsafe.Pointer
-	e = wCall("FwpmProviderGetByKey0", uintptr(h), uintptr(unsafe.Pointer(&key)), uintptr(unsafe.Pointer(&pointer)))
+	provider, lookupErr := lookup(h, &key)
+	e = lookupErr
 	if e == nil {
-		provider := (*wProvider)(pointer)
 		owner := t.ownerHash()
-		matches := provider.Data.Size == 32 && provider.Data.Data != nil
+		matches := provider != nil && provider.Data.Size == 32 && provider.Data.Data != nil
 		if matches {
 			data := unsafe.Slice(provider.Data.Data, 32)
 			for i := range owner {
@@ -332,43 +343,62 @@ func (t trafficLock) remove(force bool) error {
 				}
 			}
 		}
-		wCall("FwpmFreeMemory0", uintptr(unsafe.Pointer(&pointer)))
+		release(provider)
 		if !matches {
 			return errors.New("traffic protection belongs to another runtime")
 		}
-		if e = wCall("FwpmTransactionBegin0", uintptr(h), 0); e != nil {
+		if e = callWFP(call, "FwpmTransactionBegin0", uintptr(h), 0); e != nil {
 			return e
 		}
 		committed := false
 		defer func() {
 			if !committed {
-				wCall("FwpmTransactionAbort0", uintptr(h))
+				callWFP(call, "FwpmTransactionAbort0", uintptr(h))
 			}
 		}()
 		for i := 0; i < 256; i++ {
 			k := t.key(fmt.Sprintf("filter/%d", i))
-			e = wCall("FwpmFilterDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&k)))
+			e = callWFP(call, "FwpmFilterDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&k)))
 			if !wIgnored(e, 0x80320003) {
 				return e
 			}
 		}
 		sub := t.key("sublayer")
-		if e = wCall("FwpmSubLayerDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&sub))); !wIgnored(e, 0x80320007) {
+		if e = callWFP(call, "FwpmSubLayerDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&sub))); !wIgnored(e, 0x80320007) {
 			return e
 		}
-		if e = wCall("FwpmProviderDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&key))); e != nil {
+		if e = callWFP(call, "FwpmProviderDeleteByKey0", uintptr(h), uintptr(unsafe.Pointer(&key))); e != nil {
 			return e
 		}
-		if e = wCall("FwpmTransactionCommit0", uintptr(h)); e != nil {
+		if e = callWFP(call, "FwpmTransactionCommit0", uintptr(h)); e != nil {
 			return e
 		}
 		committed = true
 	} else if !wIgnored(e, 0x80320005) {
 		return e
 	}
-	e = os.Remove(t.marker())
+	e = removeFile(t.marker())
 	if os.IsNotExist(e) {
 		return nil
 	}
 	return e
+}
+
+type trafficProviderLookup func(windows.Handle, *windows.GUID) (*wProvider, error)
+type trafficProviderFree func(*wProvider)
+
+func lookupTrafficProvider(h windows.Handle, key *windows.GUID) (*wProvider, error) {
+	var pointer unsafe.Pointer
+	if err := callWFP(wCall, "FwpmProviderGetByKey0", uintptr(h), uintptr(unsafe.Pointer(key)), uintptr(unsafe.Pointer(&pointer))); err != nil {
+		return nil, err
+	}
+	return (*wProvider)(pointer), nil
+}
+
+func freeTrafficProvider(provider *wProvider) {
+	if provider == nil {
+		return
+	}
+	pointer := unsafe.Pointer(provider)
+	_ = callWFP(wCall, "FwpmFreeMemory0", uintptr(unsafe.Pointer(&pointer)))
 }

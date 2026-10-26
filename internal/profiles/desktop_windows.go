@@ -103,7 +103,7 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 		}
 		if before.Response.State.Active || before.Response.State.Reconnecting {
 			if err := a.inhibitUserAutoConnect(); err != nil {
-				return nil, err
+				a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after disconnect."
 			}
 			return a.desktopCall(ctx, "stop", nil, false), nil
 		}
@@ -112,11 +112,14 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 	case "status", "stop", "probe":
 		if command == "stop" {
 			if err := a.inhibitUserAutoConnect(); err != nil {
-				return nil, err
+				a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after disconnect."
 			}
 		}
 		return a.desktopCall(ctx, command, nil, false), nil
 	case "recover":
+		if err := a.inhibitUserAutoConnect(); err != nil {
+			a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after recovery."
+		}
 		for _, name := range []string{"session.json", "kill-switch.json"} {
 			if existsProfileFile(a.Store.Root, name) {
 				var err error
@@ -162,7 +165,24 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			a.desktopState.Prepared = &view
 			return before, nil
 		}
-		reply := a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+		var reply DesktopReply
+		if r.autoConnectPreferences != nil {
+			token := fmtHex(a.Store.revision[:])
+			u := a.automation()
+			if err := u.Transaction(func() error {
+				current, err := a.validateUserSettingsToken(token)
+				if err != nil || preferencesValue(current.UserSettings) != *r.autoConnectPreferences ||
+					!preferencesValue(current.UserSettings).AutoConnect || u.inhibited || u.inhibitionErr != nil {
+					return errUserSettings
+				}
+				reply = a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+		} else {
+			reply = a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+		}
 		view := presentationApplied(prepared)
 		reply.Prepared = &view
 		a.desktopState.Prepared = &view

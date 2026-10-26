@@ -105,18 +105,21 @@ func Protect(data []byte, encrypt bool) ([]byte, error) {
 	return append([]byte(nil), view...), nil
 }
 func (s *Store) lock() (func(), error) {
+	runtime.LockOSThread()
 	sum := sha256.Sum256([]byte(strings.ToUpper(s.Root)))
 	name := "Local\\OneTunnel.ProfileStore." + fmtHex(sum[:])
 	h, e := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(name))
 	if e != nil && e != windows.ERROR_ALREADY_EXISTS {
+		runtime.UnlockOSThread()
 		return nil, e
 	}
 	result, e := windows.WaitForSingleObject(h, 5000)
 	if e != nil || (result != windows.WAIT_OBJECT_0 && result != windows.WAIT_ABANDONED) {
 		windows.CloseHandle(h)
+		runtime.UnlockOSThread()
 		return nil, errors.New("Хранилище занято другим процессом.")
 	}
-	return func() { windows.ReleaseMutex(h); windows.CloseHandle(h) }, nil
+	return func() { windows.ReleaseMutex(h); windows.CloseHandle(h); runtime.UnlockOSThread() }, nil
 }
 func fmtHex(b []byte) string {
 	const hex = "0123456789abcdef"

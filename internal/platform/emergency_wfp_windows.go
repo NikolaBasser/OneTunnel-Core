@@ -42,6 +42,9 @@ func emergencyEnum(h windows.Handle, kind string, visit func(unsafe.Pointer) err
 			return err
 		}
 		if count > 128 || count > 0 && entries == nil {
+			if entries != nil {
+				_ = wCall("FwpmFreeMemory0", uintptr(unsafe.Pointer(&entries)))
+			}
 			return errors.New("invalid WFP enumeration")
 		}
 		var visitErr error

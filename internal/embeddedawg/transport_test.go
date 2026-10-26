@@ -222,6 +222,38 @@ func TestTransportUDPMetadataDeadlineAndCancellation(t *testing.T) {
 	}
 }
 
+type packetWriteTrap struct{ wrote bool }
+
+func (c *packetWriteTrap) ReadFrom([]byte) (int, net.Addr, error) { return 0, nil, nil }
+func (c *packetWriteTrap) WriteTo(p []byte, _ net.Addr) (int, error) {
+	c.wrote = true
+	return len(p), nil
+}
+func (*packetWriteTrap) Close() error                     { return nil }
+func (*packetWriteTrap) LocalAddr() net.Addr              { return &net.UDPAddr{} }
+func (*packetWriteTrap) SetDeadline(time.Time) error      { return nil }
+func (*packetWriteTrap) SetReadDeadline(time.Time) error  { return nil }
+func (*packetWriteTrap) SetWriteDeadline(time.Time) error { return nil }
+
+func TestTransportPacketConnRejectsScopedIPv6Destination(t *testing.T) {
+	conn := &packetWriteTrap{}
+	packet := &packetConn{
+		owner: &Transport{
+			addrs:  map[bool]bool{true: true},
+			routes: []netip.Prefix{netip.MustParsePrefix("::/0")},
+		},
+		conns: map[bool]net.PacketConn{true: conn},
+	}
+	_, err := packet.WriteTo([]byte("scoped"), &net.UDPAddr{
+		IP:   net.ParseIP("fe80::1"),
+		Zone: "Ethernet",
+		Port: 53,
+	})
+	if err == nil || conn.wrote {
+		t.Fatalf("scoped IPv6 destination was accepted or transmitted: err=%v wrote=%v", err, conn.wrote)
+	}
+}
+
 func TestTransportDialCancellation(t *testing.T) {
 	a, _ := startPair(t, false)
 	a.routes = []netip.Prefix{netip.MustParsePrefix("10.77.0.0/24")}

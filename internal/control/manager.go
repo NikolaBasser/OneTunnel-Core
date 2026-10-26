@@ -136,6 +136,10 @@ func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 		return m.reply(nil, "operation_timeout")
 	}
 	defer func() { <-m.gate }()
+	// Cancellation must win before acceptance, even when the gate is also ready.
+	if ctx.Err() != nil {
+		return m.reply(nil, "operation_timeout")
+	}
 	m.mu.RLock()
 	failed := m.failed
 	closing := m.closing
