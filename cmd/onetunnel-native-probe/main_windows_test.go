@@ -233,3 +233,72 @@ func TestNativeProbeClassificationIsBoundedAndSanitized(t *testing.T) {
 		return false, nil, nil
 	})
 }
+
+func TestStatisticsBatchBoundariesAndSanitizedResults(t *testing.T) {
+	items := []profiles.Profile{{Protocol: 0}, {Protocol: 99}}
+	for i := 0; i < 8; i++ {
+		items = append(items, profiles.Profile{Protocol: 2, Source: "private-source", Name: "private-name", ID: "private-id"})
+	}
+	calls := 0
+	rows := probeStatisticsProfiles(context.Background(), items, func(ctx context.Context, p profiles.Profile) platform.StatisticsAcceptanceCheck {
+		calls++
+		if p.Protocol != 2 {
+			t.Fatal("native dispatched")
+		}
+		if d, ok := ctx.Deadline(); !ok || time.Until(d) > 45*time.Second {
+			t.Fatal("deadline absent")
+		}
+		return platform.StatisticsAcceptanceCheck{CheckCompleted: true, NetworkTest: true, Success: true, UploadedBytes: 10, DownloadedBytes: 20, ElapsedMilliseconds: 30}
+	})
+	if calls != 1 || rows[0].Success != 1 || rows[0].UploadedBytes[0] != 10 {
+		t.Fatal("successful protocol retried")
+	}
+	data, _ := json.Marshal(rows)
+	if strings.Contains(string(data), "private") {
+		t.Fatal("metadata exposed")
+	}
+	calls = 0
+	probeStatisticsProfiles(context.Background(), items, func(context.Context, profiles.Profile) platform.StatisticsAcceptanceCheck {
+		calls++
+		return platform.StatisticsAcceptanceCheck{CheckCompleted: true}
+	})
+	if calls != 6 {
+		t.Fatal("batch cap missing")
+	}
+	calls = 0
+	rows = probeStatisticsProfiles(context.Background(), items, func(context.Context, profiles.Profile) platform.StatisticsAcceptanceCheck {
+		calls++
+		return platform.StatisticsAcceptanceCheck{CleanupError: true}
+	})
+	if calls != 1 || rows[0].CleanupError != 1 {
+		t.Fatal("cleanup did not stop batch")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	probeStatisticsProfiles(ctx, items, func(context.Context, profiles.Profile) platform.StatisticsAcceptanceCheck {
+		t.Fatal("canceled batch ran")
+		return platform.StatisticsAcceptanceCheck{}
+	})
+	if validateProbeScopeOffset("statistics", 32) != nil {
+		t.Fatal("statistics offset rejected")
+	}
+}
+
+func TestStatisticsKindIsExplicitAndPrecedesOffset(t *testing.T) {
+	for _, v := range []struct {
+		scope string
+		kind  int
+	}{{"native", 2}, {"proxy", 4}, {"statistics", 0}, {"statistics", 1}, {"statistics", -2}, {"statistics", 100}} {
+		if validateStatisticsKind(v.scope, v.kind) == nil {
+			t.Fatal("invalid kind accepted")
+		}
+	}
+	if validateStatisticsKind("statistics", 4) != nil || validateStatisticsKind("native", -1) != nil {
+		t.Fatal("valid kind rejected")
+	}
+	items := []profiles.Profile{{Protocol: 2, ID: "a"}, {Protocol: 4, ID: "b"}, {Protocol: 2, ID: "c"}, {Protocol: 4, ID: "d"}}
+	got, err := filterProxyProfilesFromOffset(filterStatisticsKind(items, 4), 1)
+	if err != nil || len(got) != 1 || got[0].ID != "d" {
+		t.Fatal("offset did not follow protocol filter")
+	}
+}

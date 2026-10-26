@@ -21,10 +21,11 @@ import (
 
 func main() {
 	data := flag.String("data", "", "existing isolated encrypted profile-copy directory")
-	scope := flag.String("scope", "native", "native or proxy group checks")
+	scope := flag.String("scope", "native", "native, proxy group checks or statistics lifecycle")
 	offset := flag.Int("offset", 0, "skip this many eligible proxy profiles")
+	kind := flag.Int("kind", -1, "optional numeric proxy protocol for statistics only; offset follows this filter")
 	flag.Parse()
-	if flag.NArg() != 0 || validateProbeScopeOffset(*scope, *offset) != nil {
+	if flag.NArg() != 0 || validateProbeScopeOffset(*scope, *offset) != nil || validateStatisticsKind(*scope, *kind) != nil {
 		fail()
 	}
 	base, err := windows.KnownFolderPath(windows.FOLDERID_LocalAppData, 0)
@@ -53,7 +54,11 @@ func main() {
 	if *scope == "native" {
 		result = probeProfiles(ctx, document.Profiles, platform.ProbeNativeDNSForAcceptance)
 	} else {
-		items, err := filterProxyProfilesFromOffset(document.Profiles, *offset)
+		candidates := document.Profiles
+		if *scope == "statistics" && *kind != -1 {
+			candidates = filterStatisticsKind(candidates, *kind)
+		}
+		items, err := filterProxyProfilesFromOffset(candidates, *offset)
 		if err != nil {
 			fail()
 		}
@@ -61,12 +66,30 @@ func main() {
 		if err != nil {
 			fail()
 		}
-		result = probeProxyProfiles(ctx, items, func(ctx context.Context, profile profiles.Profile) platform.ProxyAcceptanceCheck {
-			return platform.ProbeProxyForAcceptance(ctx, filepath.Dir(executable), profile)
-		})
+		if *scope == "statistics" {
+			result = probeStatisticsProfiles(ctx, items, func(ctx context.Context, profile profiles.Profile) platform.StatisticsAcceptanceCheck {
+				return platform.ProbeStatisticsForAcceptance(ctx, filepath.Dir(executable), profile)
+			})
+		} else {
+			result = probeProxyProfiles(ctx, items, func(ctx context.Context, profile profiles.Profile) platform.ProxyAcceptanceCheck {
+				return platform.ProbeProxyForAcceptance(ctx, filepath.Dir(executable), profile)
+			})
+		}
 	}
 	if json.NewEncoder(os.Stdout).Encode(result) != nil {
 		fail()
+	}
+	if *scope == "statistics" {
+		successes := 0
+		for _, row := range result {
+			if row.CleanupError != 0 {
+				fail()
+			}
+			successes += row.Success
+		}
+		if ctx.Err() != nil || successes == 0 {
+			fail()
+		}
 	}
 	if *scope == "proxy" {
 		if ctx.Err() != nil {
@@ -80,8 +103,28 @@ func main() {
 	}
 }
 
+func validateStatisticsKind(scope string, kind int) error {
+	if kind == -1 {
+		return nil
+	}
+	if scope != "statistics" || kind < 2 || kind >= len(protocol.Names) {
+		return errors.New("invalid statistics protocol")
+	}
+	return nil
+}
+
+func filterStatisticsKind(items []profiles.Profile, kind int) []profiles.Profile {
+	var selected []profiles.Profile
+	for _, item := range items {
+		if item.Protocol == kind {
+			selected = append(selected, item)
+		}
+	}
+	return selected
+}
+
 func validateProbeScopeOffset(scope string, offset int) error {
-	if (scope != "native" && scope != "proxy") || offset < 0 || (scope != "proxy" && offset != 0) {
+	if (scope != "native" && scope != "proxy" && scope != "statistics") || offset < 0 || (scope == "native" && offset != 0) {
 		return errors.New("invalid probe scope or offset")
 	}
 	return nil
@@ -162,11 +205,12 @@ func validateDataRoot(root, forbidden string) (string, error) {
 }
 
 type protocolResult struct {
-	Protocol                     string
-	Count, Attempted, Success    int
-	DNSLatencyMilliseconds       []int64 `json:",omitempty"`
-	HTTPSLatencyMilliseconds     []int64 `json:",omitempty"`
-	CheckCompleted, CleanupError int     `json:",omitempty"`
+	Protocol                                            string
+	Count, Attempted, Success                           int
+	DNSLatencyMilliseconds                              []int64  `json:",omitempty"`
+	HTTPSLatencyMilliseconds                            []int64  `json:",omitempty"`
+	CheckCompleted, CleanupError                        int      `json:",omitempty"`
+	UploadedBytes, DownloadedBytes, ElapsedMilliseconds []uint64 `json:",omitempty"`
 }
 
 func probeProxyProfiles(ctx context.Context, items []profiles.Profile, probe func(context.Context, profiles.Profile) platform.ProxyAcceptanceCheck) []protocolResult {
@@ -240,6 +284,54 @@ func probeProfiles(ctx context.Context, items []profiles.Profile, probe nativePr
 		if network && err == nil && !canceled && latency != nil && *latency >= 0 {
 			row.Success++
 			row.DNSLatencyMilliseconds = append(row.DNSLatencyMilliseconds, *latency)
+		}
+	}
+	return rows
+}
+
+// A small bounded batch stops after one successful lifecycle per protocol.
+func probeStatisticsProfiles(ctx context.Context, items []profiles.Profile, probe func(context.Context, profiles.Profile) platform.StatisticsAcceptanceCheck) []protocolResult {
+	rows := make([]protocolResult, len(protocol.Names)-2)
+	for i := range rows {
+		rows[i].Protocol = protocol.Names[i+2]
+	}
+	for _, p := range items {
+		if p.Protocol >= 2 && p.Protocol < len(protocol.Names) {
+			rows[p.Protocol-2].Count++
+		}
+	}
+	attempted := 0
+	for _, p := range items {
+		if p.Protocol < 2 || p.Protocol >= len(protocol.Names) {
+			continue
+		}
+		row := &rows[p.Protocol-2]
+		if row.Success > 0 {
+			continue
+		}
+		if attempted == 6 || ctx.Err() != nil {
+			break
+		}
+		attempted++
+		deadline, cancel := context.WithTimeout(ctx, 45*time.Second)
+		check := probe(deadline, p)
+		canceled := deadline.Err() != nil
+		cancel()
+		if check.CheckCompleted {
+			row.CheckCompleted++
+		}
+		if check.NetworkTest {
+			row.Attempted++
+		}
+		if check.CleanupError {
+			row.CleanupError++
+			break
+		}
+		if check.Success && check.CheckCompleted && check.NetworkTest && !canceled && check.UploadedBytes > 0 && check.DownloadedBytes > 0 {
+			row.Success++
+			row.UploadedBytes = append(row.UploadedBytes, check.UploadedBytes)
+			row.DownloadedBytes = append(row.DownloadedBytes, check.DownloadedBytes)
+			row.ElapsedMilliseconds = append(row.ElapsedMilliseconds, check.ElapsedMilliseconds)
 		}
 	}
 	return rows

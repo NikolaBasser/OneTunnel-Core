@@ -136,3 +136,5 @@
 !/cmd/onetunnel-native-probe/main_windows_test.go
 
 !/internal/platform/proxy_probe_safety_windows_test.go
+
+!/internal/platform/statistics_acceptance_safety_windows_test.go
