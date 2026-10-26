@@ -48,16 +48,28 @@ func (r *Runtime) retryContext() (context.Context, context.CancelFunc) {
 
 // Called with the operation mutex held. No timer ever removes traffic policy.
 func (r *Runtime) maintainConnection() {
-	if len(r.retry.targets) == 0 || time.Now().Before(r.retry.next) {
+	r.maintainConnectionWith(retryEffects{time.Now, r.connectionHealth, r.disconnectMode, r.start, r.activateStatistics})
+}
+
+type retryEffects struct {
+	now        func() time.Time
+	health     func(context.Context) error
+	disconnect func(context.Context, bool) error
+	start      func(context.Context, control.Request) error
+	activate   func()
+}
+
+func (r *Runtime) maintainConnectionWith(effects retryEffects) {
+	if len(r.retry.targets) == 0 || effects.now().Before(r.retry.next) {
 		return
 	}
 	ctx, cancel := r.retryContext()
 	defer cancel()
 	if !r.transportFailed && !r.retrying && r.session != nil {
 		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
-		err := r.connectionHealth(probeCtx)
+		err := effects.health(probeCtx)
 		done()
-		r.retry.next = time.Now().Add(20 * time.Second)
+		r.retry.next = effects.now().Add(20 * time.Second)
 		if err == nil {
 			r.retry.failures = 0
 			return
@@ -81,45 +93,55 @@ func (r *Runtime) maintainConnection() {
 	r.retry.attempt++
 	r.publish("Переподключение · попытка " + itoa(r.retry.attempt) + " из 9")
 	retain := r.lock.needed()
-	if err := r.disconnectMode(ctx, retain); err != nil {
+	if err := effects.disconnect(ctx, retain); err != nil {
 		r.retry.targets = nil
 		r.retrying = false
 		r.transportFailed = true
+		r.publish("")
 		return
 	}
 	// First retry keeps the selected server; following retries visit its backups.
 	index := (r.retry.attempt - 1) % len(r.retry.targets)
 	target := r.retry.targets[index]
 	request := control.Request{Version: 1, Command: "start", Profile: &target, FullDevice: r.retry.full}
-	err := r.start(ctx, request)
+	err := ctx.Err()
 	if err == nil {
-		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
-		err = r.connectionHealth(probeCtx)
-		done()
+		err = effects.start(ctx, request)
+		if err == nil {
+			err = ctx.Err()
+		}
 	}
 	if err == nil {
-		r.activateStatistics()
+		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
+		err = effects.health(probeCtx)
+		done()
+		if err == nil {
+			err = ctx.Err()
+		}
+	}
+	if err == nil {
+		effects.activate()
 		r.retrying = false
 		r.transportFailed = false
 		r.retry.failures = 0
 		r.retry.attempt = 0
 		// Resume from the working backup instead of constantly preferring a dead node.
 		r.retry.targets[0], r.retry.targets[index] = r.retry.targets[index], r.retry.targets[0]
-		r.retry.next = time.Now().Add(20 * time.Second)
+		r.retry.next = effects.now().Add(20 * time.Second)
 		r.publish("Подключение восстановлено: " + target.Name)
 		return
 	}
 	// An engine that started but failed its end-to-end check must not be exposed
 	// as connected. Leave the deny rules installed while disposing its transport.
 	cleanup, done := context.WithTimeout(context.Background(), 15*time.Second)
-	cleanupErr := r.disconnectMode(cleanup, retain)
+	cleanupErr := effects.disconnect(cleanup, retain)
 	done()
 	r.transportFailed = true
 	if cleanupErr != nil {
 		r.retry.targets = nil
 		r.retrying = false
 	}
-	r.retry.next = time.Now().Add(time.Duration(r.retry.attempt*3) * time.Second)
+	r.retry.next = effects.now().Add(time.Duration(r.retry.attempt*3) * time.Second)
 	r.publish("Ожидается следующая попытка переподключения")
 }
 
