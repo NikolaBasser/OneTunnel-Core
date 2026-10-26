@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 func TestManagerTracksBackendFallbackIdentity(t *testing.T) {
@@ -61,5 +63,34 @@ func TestFallbackPreservesRoutingMode(t *testing.T) {
 	backup.Source = strings.Replace(source, "AllowedIPs = 10.0.0.0/8", "AllowedIPs = 0.0.0.0/0", 1)
 	if CompatibleFallback(first, backup, false) {
 		t.Fatal("backup silently widened native routes")
+	}
+}
+
+func TestFallbackRequiresEquivalentNetworkPolicy(t *testing.T) {
+	primary := Profile{ID: "11111111-1111-4111-8111-111111111111", Name: "primary", Protocol: 2, Source: "vless://6d7a9bdf-fdeb-4b9b-aa68-24abfa4bd12a@127.0.0.1:443?security=tls&sni=localhost", Group: "test", Network: &protocol.NetworkOptions{Rules: []protocol.NetworkRule{{Kind: "cidr", Value: "10.0.0.0/8", Action: "direct"}}}}
+	backup := primary
+	if !CompatibleFallback(primary, backup, true) {
+		t.Fatal("equivalent policy rejected")
+	}
+	backup.Network = &protocol.NetworkOptions{Rules: []protocol.NetworkRule{{Kind: "cidr", Value: "0.0.0.0/0", Action: "direct"}}}
+	if CompatibleFallback(primary, backup, true) {
+		t.Fatal("different full-device policy accepted")
+	}
+	if Validate(Request{Version: Version, Command: "start", FullDevice: false, Profile: &primary}) == "" {
+		t.Fatal("local-mode start accepted policy")
+	}
+	if Validate(Request{Version: Version, Command: "start", FullDevice: true, Profile: &primary}) != "" {
+		t.Fatal("full-device start rejected policy")
+	}
+	if Validate(Request{Version: Version, Command: "check-profile", Profile: &primary}) != "" {
+		t.Fatal("config-only group check rejected proxy policy")
+	}
+	native := primary
+	native.Protocol = 1
+	if Validate(Request{Version: Version, Command: "check-profile", Profile: &native}) != "" {
+		t.Fatal("config-only check rejected native shared policy contract")
+	}
+	if Validate(Request{Version: Version, Command: "start", Profile: &native}) == "" {
+		t.Fatal("local-mode start accepted native policy")
 	}
 }

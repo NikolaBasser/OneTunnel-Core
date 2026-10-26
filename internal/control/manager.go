@@ -121,7 +121,11 @@ func (m *Manager) Dispatch(ctx context.Context, request Request) Response {
 }
 func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 	if code := Validate(request); code != "" {
-		return m.reply(nil, code)
+		reply := m.reply(nil, code)
+		if code == "invalid_configuration" {
+			reply.ErrorInfo = &ErrorInfo{Stage: "configuration", Code: "unknown"}
+		}
+		return reply
 	}
 	if request.Command == "hello" || request.Command == "status" || request.Command == "watch" {
 		return m.reply(nil, "")
@@ -132,6 +136,10 @@ func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 		return m.reply(nil, "operation_timeout")
 	}
 	defer func() { <-m.gate }()
+	// Cancellation must win before acceptance, even when the gate is also ready.
+	if ctx.Err() != nil {
+		return m.reply(nil, "operation_timeout")
+	}
 	m.mu.RLock()
 	failed := m.failed
 	closing := m.closing
@@ -180,7 +188,9 @@ func (m *Manager) dispatch(ctx context.Context, request Request) Response {
 	if message.Error != nil {
 		code = *message.Error
 	}
-	return m.reply(message.Result, code)
+	reply := m.reply(message.Result, code)
+	reply.ErrorInfo = message.ErrorInfo
+	return reply
 }
 func (m *Manager) Close() {
 	m.mu.Lock()

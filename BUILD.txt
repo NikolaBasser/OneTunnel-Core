@@ -33,6 +33,45 @@ For Windows production-tag tests and vet, use the exact tags in .github/workflow
 Core CI does not require .NET, UI assets or a Windows application checkout.
 No release or artifact publication is performed by this workflow.
 
+SUBSCRIPTION CHECKS
+Portable profile tests cover bounded provider metadata and HTTPS download limits.
+Windows profile tests use isolated DPAPI stores, controlled trusted TLS servers,
+and framed API1 requests to check preview/apply/cancel, conflicts and privacy.
+They do not change the installed service, real profiles, routes, DNS or WFP.
+Manual subscription refresh runs in the user host; this feature needs no service update.
+
+DIAGNOSTICS
+The Windows API1 diagnostics.report command returns an allowlisted JSON string.
+Its build identity belongs to the bundled profile host, not the installed service.
+Package engine hints are not operational health results. Generation reads local
+profile counts without service calls, network requests or profile-store writes.
+Synthetic diagnostics_windows_test.go covers schema allowlists, secret exclusion,
+unknown protocols, corrupt stores and unchanged storage. No service update is needed.
+
+PROFILE LIBRARY
+Windows API1 favorite.set stores a validated desired favorite state for an existing
+profile ID; ui.favorite.set returns the sanitized document. Repeated desired state
+is a no-op. library.view returns ordered visible IDs for stored/name/protocol sort
+and an optional favorites-only filter. Sorting is stable; name comparison uses
+lowercase Unicode values and protocol comparison uses persisted numeric IDs.
+Neither projection nor preference changes execute service or network commands.
+Favorites are optional encrypted document metadata; old stores need no migration
+write. Save removes references to deleted/retired profiles. View order never changes
+the stored order used for fallback selection. Synthetic tests cover compatibility,
+preview conflicts, failure preservation and deterministic ordering.
+
+GROUP MANAGEMENT
+group.list returns Name/ProfileCount/IsSubscription/Token summaries. The token is
+an opaque encrypted-store revision. group.rename (Group/Name/Token) and group.delete
+(Group/Token) reject stale snapshots before writing; rename rejects collisions
+rather than merging groups. Use ui.* mutations for sanitized Document responses.
+group.expansion.all applies Expanded to all stored groups, including hidden ones.
+Individual and bulk expansion skip redundant writes. All group mutations reject
+retained active/reconnecting/recovery/locked facts and legacy recovery files.
+The UI checks Go CanAdd before entering its busy operation. No service or network
+call is made. Tests use synthetic stores and validate snapshot safety, metadata,
+favorites, no-op bytes and failure preservation. No installed-service update needed.
+
 PORTABLE FOUNDATION
 The public Go package is github.com/NikolaBasser/OneTunnel-Core/sdk.
 go test -mod=readonly ./sdk ./internal/control ./internal/protocol ./internal/profiles
@@ -44,3 +83,76 @@ LEGAL NOTICES
 go.mod/go.sum pin dependencies; generated bundles include notices collected from
 the actual linked modules. Static upstream notices are retained in licenses/.
 See THIRD-PARTY-NOTICES.txt and preserve applicable redistribution obligations.
+
+GROUP CHECK RESULTS
+Results are temporary user-host state. Sort/filter do not change profile or fallback
+order. The best-result action uses the entire completed batch, regardless of the
+visible filter, and only changes selection. It never starts a connection.
+Changed profile storage requires a fresh check. No service update is required.
+
+PROFILE COPY AND MOVE
+Open the selected-profile tools on the connection page. Enter a copy name and a
+manual destination group, then create a copy or move the selected manual profile.
+The destination can be an existing manual group or a new group. Saved subscription
+groups cannot be destinations. Reload the tools after a changed storage snapshot.
+Moving keeps the ID, favorite and stored position. Copies append to stored order.
+These actions preserve unfinished editor drafts and do not connect a tunnel.
+No installed-service update is required for these user-host operations.
+
+DNS AND SPLIT ROUTING (PROXY WHOLE-DEVICE MODE)
+Open the selected profile DNS/routing section, choose default, custom DoH or DoT,
+and enter a literal resolver IP plus its verified TLS server name. Blank port
+uses 443 for DoH or 853 for DoT; blank DoH path uses /dns-query; DoT path is empty.
+Enter ordered rules as: kind | action | value. Kinds: domain, domain-suffix, cidr,
+process. Actions: proxy, direct, reject. First matching user rule wins after
+infrastructure rules; unmatched traffic stays proxied. Save applies on a future
+connection, not to a running session. Direct rules explicitly allow direct egress.
+AWG/WG and local proxy mode cannot use these new preferences. Install the matching
+bundled service explicitly before using them; preview startup never updates it.
+Domain matching depends on observed DNS/SNI and process matching on Windows process
+attribution; private application DoH/ECH can reduce domain visibility. A config
+validation test does not prove live routing correctness or absence of DNS leaks.
+
+BACKUP, SCHEDULES AND TRAY PROFILES
+Use Backup in the service/settings view to export to a NEW .otbackup filename.
+Use a strong password of at least12 UTF-8 bytes; no password is stored. Restore
+shows counts and replaces the entire local library only after confirmation.
+Enabled subscription schedules require a separate restore opt-in, off by default.
+Restore preview tokens expire after10 minutes; cleanup is lazy on Go requests and
+host close. Memory clearing is best effort, not guaranteed string-memory erasure.
+Saved subscriptions can prepare change previews every15..10080 minutes while the
+app is open; they never silently apply. Turning a schedule off keeps its interval.
+Use the tray profile submenu to select a profile without connecting. Up to50
+profiles are shown; use the main window for the rest. No service update is needed
+for these user-host features. These features do not alter networking automatically.
+
+DOMAIN DNS AND LAN PREFERENCES
+Additional resolver lines: transport | IP | TLS name | port | path.
+Use https or tls; empty port/path select protocol defaults. Maximum8 resolvers.
+DNS-rule lines: domain or domain-suffix | domain | resolver number (starting1).
+Maximum64 DNS rules, evaluated in order. Resolver traffic stays proxied.
+LAN access defaults off and covers10/8,172.16/12,192.168/16 and fc00::/7 only.
+Explicit user reject/proxy rules take precedence over the appended LAN exception.
+Save affects future shared-TUN proxy connections; native AWG/WG are unsupported.
+Local config tests do not establish live DNS/IPv6 leak or firewall behavior.
+
+CONNECTION STATISTICS
+The connection card renders Go-owned totals, rates, elapsed time and scope.
+Counters reset on reconnect/fallback; no accumulated history is stored.
+Local-proxy totals include connection checks. TUN fast flows include packet bytes;
+AWG/WG expose transport counters. Missing/error samples are unavailable, not zero.
+Error categories use typed causes; engine errors lacking typed causes remain unknown.
+A matching service is needed for metrics; old services continue without them.
+
+WINDOWS USER SETTINGS
+All automation defaults off. Save the chosen profile/mode and trusted/public
+permissions explicitly. Unknown networks count as public. Startup registers only
+this user's validated OneTunnel.exe and is separate from auto-connect.
+An explicit Disconnect inhibits auto-connect; toggle automation off/on to rearm.
+Three failed starts stop automatic attempts until a category transition or rearm.
+Enable Windows proxy separately after a confirmed LOCAL proxy connection; whole-device mode cannot lease the user proxy. Existing PAC/auto-detect must be resolved
+by the user first. Previous typed proxy values are restored selectively; another
+application's edits are not overwritten. Host exit or local listener loss triggers
+an independent watchdog. This does not alter persistent whole-device kill switch.
+Settings run while the user app is open. Backup restore leaves automation off;
+machine startup registration is excluded. Fake-registry tests are not live proof.

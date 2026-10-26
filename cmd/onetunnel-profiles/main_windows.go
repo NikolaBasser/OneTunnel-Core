@@ -3,18 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
-	"golang.org/x/sys/windows"
-	"io"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/profiles"
+	"golang.org/x/sys/windows"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--user-proxy-watchdog" {
+		if platform.RunUserProxyWatchdog(os.Args[2:]) != nil {
+			os.Exit(5)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Printf("OneTunnel Go profile host %s; control API %d; revision %s; dirty %s\n", buildinfo.Version, control.Version, buildinfo.Revision, buildinfo.Dirty)
 		return
@@ -55,6 +61,7 @@ func main() {
 		return
 	}
 	app := &profiles.Application{Store: store, Directory: filepath.Dir(path), Downloader: profiles.Download}
+	_ = app.InitializeUserAutomation()
 	if profiles.RunHost(context.Background(), os.Stdin, os.Stdout, app) != nil {
 		os.Exit(3)
 	}

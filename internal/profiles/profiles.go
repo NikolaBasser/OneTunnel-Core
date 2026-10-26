@@ -19,18 +19,26 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rivo/uniseg"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"github.com/rivo/uniseg"
 )
 
 const MaxBytes = 4 * 1024 * 1024
 
 type Profile = control.Profile
+type SubscriptionMetadata struct {
+	Upload    *uint64
+	Download  *uint64
+	Total     *uint64
+	Expire    *uint64
+	UpdatedAt string
+}
 type ImportResult struct {
 	Profiles   []Profile
 	Duplicates int
 	Skipped    int
+	Metadata   *SubscriptionMetadata
 }
 type MergeResult struct {
 	Profiles []Profile
@@ -183,7 +191,9 @@ func Parse(name, source string, requested *int) (Profile, error) {
 }
 
 func Validate(p Profile) error {
-	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &p}); e != "" {
+	check := p
+	check.Network = nil // Stored policy is validated independently of runtime mode.
+	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &check, FullDevice: true}); e != "" {
 		return ErrImport
 	}
 	if !ValidName(p.Name) || !ValidName(p.Group) {
@@ -194,6 +204,14 @@ func Validate(p Profile) error {
 	}
 	if e := protocol.ValidateOptions(p.Source, p.Protocol, p.Transport); e != nil {
 		return errors.New("Несовместимые параметры фрагментации, шумов или MUX. Проверь транспорт, Vision и допустимые диапазоны.")
+	}
+	if e := protocol.ValidateNetworkOptions(p.Network, p.Protocol, true); e != nil {
+		return ErrImport
+	}
+	if p.Protocol < 2 && !protocol.NetworkOptionsEmpty(p.Network) {
+		if _, e := protocol.CompileWithNetwork(p.Source, p.Protocol, true, 18001, 18002, "unused", p.Transport, p.Network); e != nil {
+			return ErrImport
+		}
 	}
 	return nil
 }
@@ -556,6 +574,7 @@ func Merge(existing, incoming []Profile, group string) (MergeResult, error) {
 			fresh.ID = match.ID
 			fresh.Transport = match.Transport
 			fresh.Reliability = match.Reliability
+			fresh.Network = protocol.CloneNetworkOptions(match.Network)
 			if fresh.Source != match.Source || fresh.Name != match.Name {
 				r.Updated++
 			}

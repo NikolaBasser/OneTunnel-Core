@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/mgr"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
 
 type service struct{ owner, directory string }
@@ -105,13 +106,67 @@ func (s *service) Execute(args []string, changes <-chan svc.ChangeRequest, statu
 			case svc.Interrogate:
 				status <- running
 			case svc.Stop, svc.Shutdown:
-				status <- svc.Status{State: svc.StopPending, WaitHint: 180000}
-				cancel()
-				<-done
+				status <- svc.Status{State: svc.StopPending, WaitHint: 420000, CheckPoint: 1}
+				err := stopServiceGracefully(cancel, done, func() error {
+					return stopRuntimeForSCM(manager)
+				}, func(checkpoint uint32) {
+					status <- svc.Status{State: svc.StopPending, WaitHint: 420000, CheckPoint: checkpoint}
+				})
+				if err != nil {
+					return false, 1066
+				}
 				return false, 0
 			}
 		case <-done:
 			return false, 1066
 		}
 	}
+}
+
+func stopServiceGracefully(cancel func(), pipeDone <-chan error, recoverOwned func() error, progress func(uint32)) error {
+	cancel()
+	drainErr, checkpoint := waitForPipeDrain(pipeDone, progress, 1)
+	recoveryErr, _ := waitWithProgress(recoverOwned, progress, checkpoint)
+	if drainErr != nil && recoveryErr != nil {
+		return fmt.Errorf("control pipe shutdown failed: %v; graceful recovery failed: %w", drainErr, recoveryErr)
+	}
+	if drainErr != nil {
+		return fmt.Errorf("control pipe shutdown failed: %w", drainErr)
+	}
+	return recoveryErr
+}
+
+func waitForPipeDrain(pipeDone <-chan error, progress func(uint32), checkpoint uint32) (error, uint32) {
+	return waitWithProgress(func() error { return <-pipeDone }, progress, checkpoint)
+}
+
+func waitWithProgress(action func() error, progress func(uint32), checkpoint uint32) (error, uint32) {
+	done := make(chan error, 1)
+	go func() { done <- action() }()
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err, checkpoint
+		case <-ticker.C:
+			checkpoint++
+			if progress != nil {
+				progress(checkpoint)
+			}
+		}
+	}
+}
+
+func stopRuntimeForSCM(manager *control.Manager) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
+	defer cancel()
+	response := manager.Dispatch(ctx, control.Request{Version: control.Version, Command: "recover"})
+	if response.Error != nil {
+		return fmt.Errorf("graceful recovery failed: %s", *response.Error)
+	}
+	if response.State.Active || response.State.TrafficLocked || response.State.NeedsRecovery {
+		return errors.New("graceful recovery left traffic protection or recovery active")
+	}
+	return nil
 }

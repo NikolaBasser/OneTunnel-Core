@@ -3,6 +3,9 @@ package control
 import "github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 
 func CompatibleFallback(primary, backup Profile, full bool) bool {
+	if !protocol.NetworkOptionsEquivalent(primary.Network, backup.Network) {
+		return false
+	}
 	if full {
 		return true
 	}
@@ -27,8 +30,10 @@ type ReliabilityOptions struct {
 }
 
 type ProfileCheck struct {
-	Success      bool
-	NetworkTest  bool
-	Milliseconds int64
-	Message      string
+	Success                  bool
+	NetworkTest              bool
+	Milliseconds             int64
+	Message                  string
+	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
+	DNSLatencyMilliseconds   *int64 `json:",omitempty"`
 }

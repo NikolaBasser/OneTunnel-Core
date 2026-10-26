@@ -1,0 +1,194 @@
+package profiles
+
+import (
+	"errors"
+	"strconv"
+	"strings"
+
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+)
+
+type NetworkPreferencesView struct {
+	ID, Token, Message, Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
+	AllowLAN                                                                                           bool
+	Supported, CanSave                                                                                 bool
+}
+
+type NetworkInput struct {
+	Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
+	AllowLAN                                                                       bool
+}
+
+func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
+	mode := strings.ToLower(strings.TrimSpace(input.Mode))
+	if mode != "default" && mode != "https" && mode != "tls" {
+		return nil, protocol.ErrConfiguration
+	}
+	options := &protocol.NetworkOptions{}
+	options.AllowLAN = input.AllowLAN
+	if mode != "default" {
+		port := 0
+		if strings.TrimSpace(input.Port) != "" {
+			parsed, err := strconv.Atoi(strings.TrimSpace(input.Port))
+			if err != nil {
+				return nil, protocol.ErrConfiguration
+			}
+			port = parsed
+		}
+		options.DNS = &protocol.DNSOptions{Transport: mode, ServerIP: input.ServerIP, ServerName: input.ServerName, Port: port, Path: input.Path}
+	} else if input.ServerIP != "" || input.ServerName != "" || input.Port != "" || input.Path != "" {
+		return nil, protocol.ErrConfiguration
+	}
+	if strings.TrimSpace(input.RulesText) != "" {
+		for _, raw := range strings.Split(input.RulesText, "\n") {
+			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) != 3 {
+				return nil, protocol.ErrConfiguration
+			}
+			options.Rules = append(options.Rules, protocol.NetworkRule{Kind: strings.TrimSpace(parts[0]), Action: strings.TrimSpace(parts[1]), Value: strings.TrimSpace(parts[2])})
+			if len(options.Rules) > protocol.MaxNetworkRules {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+	}
+	if strings.TrimSpace(input.ResolversText) != "" {
+		for _, raw := range strings.Split(input.ResolversText, "\n") {
+			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) != 5 {
+				return nil, protocol.ErrConfiguration
+			}
+			port := 0
+			if strings.TrimSpace(parts[3]) != "" {
+				parsed, err := strconv.Atoi(strings.TrimSpace(parts[3]))
+				if err != nil {
+					return nil, protocol.ErrConfiguration
+				}
+				port = parsed
+			}
+			options.Resolvers = append(options.Resolvers, protocol.DNSOptions{
+				Transport: strings.TrimSpace(parts[0]), ServerIP: strings.TrimSpace(parts[1]),
+				ServerName: strings.TrimSpace(parts[2]), Port: port, Path: strings.TrimSpace(parts[4]),
+			})
+			if len(options.Resolvers) > protocol.MaxDNSResolvers {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+	}
+	if strings.TrimSpace(input.DNSRulesText) != "" {
+		for _, raw := range strings.Split(input.DNSRulesText, "\n") {
+			line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, "|")
+			if len(parts) != 3 {
+				return nil, protocol.ErrConfiguration
+			}
+			resolver, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+			if err != nil || resolver < 1 {
+				return nil, protocol.ErrConfiguration
+			}
+			options.DNSRules = append(options.DNSRules, protocol.DNSRule{Kind: strings.TrimSpace(parts[0]), Value: strings.TrimSpace(parts[1]), ResolverIndex: resolver - 1})
+			if len(options.DNSRules) > protocol.MaxDNSRules {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+	}
+	return protocol.NormalizeNetworkOptions(options)
+}
+
+func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView, error) {
+	if a == nil || a.Store == nil {
+		return NetworkPreferencesView{}, errors.New("profile library unavailable")
+	}
+	doc, err := a.Store.Load()
+	if err != nil {
+		return NetworkPreferencesView{}, errors.New("profile library unavailable")
+	}
+	view := NetworkPreferencesView{ID: id, Token: fmtHex(a.Store.revision[:]), Mode: "default", Supported: false, CanSave: a.refreshAllowed()}
+	for _, profile := range doc.Profiles {
+		if profile.ID != id {
+			continue
+		}
+		view.Supported = profile.Protocol >= 0 && profile.Protocol <= protocol.MaxKind
+		view.CanSave = view.CanSave && view.Supported
+		if dns := profile.Network; dns != nil {
+			view.AllowLAN = dns.AllowLAN
+			if dns.DNS != nil {
+				view.Mode, view.ServerIP, view.ServerName = dns.DNS.Transport, dns.DNS.ServerIP, dns.DNS.ServerName
+				if dns.DNS.Port != 0 {
+					view.Port = strconv.Itoa(dns.DNS.Port)
+				}
+				view.Path = dns.DNS.Path
+			}
+			for _, rule := range dns.Rules {
+				view.RulesText += rule.Kind + " | " + rule.Action + " | " + rule.Value + "\n"
+			}
+			for _, resolver := range dns.Resolvers {
+				port := ""
+				if resolver.Port != 0 {
+					port = strconv.Itoa(resolver.Port)
+				}
+				view.ResolversText += resolver.Transport + " | " + resolver.ServerIP + " | " + resolver.ServerName + " | " + port + " | " + resolver.Path + "\n"
+			}
+			for _, rule := range dns.DNSRules {
+				view.DNSRulesText += rule.Kind + " | " + rule.Value + " | " + strconv.Itoa(rule.ResolverIndex+1) + "\n"
+			}
+		}
+		if !view.Supported {
+			view.Message = "Network preferences require a supported full-device profile."
+		} else if profile.Protocol < 2 {
+			view.Message = "Nonempty preferences use the shared TUN for TCP/UDP in full-device mode. Policy DNS replaces imported DNS; peer AllowedIPs are preserved. ICMP is unavailable in this mode. Reset all preferences to restore the native path."
+		}
+		return view, nil
+	}
+	return NetworkPreferencesView{}, errors.New("profile unavailable")
+}
+
+func (a *Application) saveNetworkPreferences(r Request) (Document, error) {
+	if a == nil || a.Store == nil || !a.refreshAllowed() {
+		return Document{}, errors.New("network preferences are unavailable while the connection is active or protected")
+	}
+	if r.NetworkInput == nil || r.ID == "" {
+		return Document{}, protocol.ErrConfiguration
+	}
+	doc, err := a.Store.Load()
+	if err != nil {
+		return Document{}, errors.New("profile library unavailable")
+	}
+	if r.Token == "" || r.Token != fmtHex(a.Store.revision[:]) {
+		return Document{}, errors.New("profile list changed; reload before saving")
+	}
+	for i := range doc.Profiles {
+		if doc.Profiles[i].ID != r.ID {
+			continue
+		}
+		if doc.Profiles[i].Protocol < 0 || doc.Profiles[i].Protocol > protocol.MaxKind {
+			return Document{}, protocol.ErrConfiguration
+		}
+		network, parseErr := r.NetworkInput.Parse()
+		if parseErr != nil {
+			return Document{}, parseErr
+		}
+		if protocol.NetworkOptionsEquivalent(doc.Profiles[i].Network, network) {
+			return presentationDocument(doc), nil
+		}
+		doc.Profiles[i].Network = network
+		if err = Validate(doc.Profiles[i]); err != nil {
+			return Document{}, err
+		}
+		if err = a.Store.Save(doc); err != nil {
+			return Document{}, err
+		}
+		return presentationDocument(doc), nil
+	}
+	return Document{}, errors.New("profile unavailable")
+}

@@ -77,11 +77,15 @@ func resolveEndpoint(ctx context.Context, host string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if resolver, ok := ctx.Value(bootstrapKey{}).(*bootstrapResolver); ok {
-		return resolver.lookup(ctx, host)
+		address, err := resolver.lookup(ctx, host)
+		if err != nil {
+			return "", stageError{stage: "bootstrap", err: err}
+		}
+		return address, nil
 	}
 	ips, e := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if e != nil {
-		return "", e
+		return "", stageError{stage: "bootstrap", err: e}
 	}
 	for _, ip := range ips {
 		if ip.IP.To4() != nil {
@@ -91,7 +95,22 @@ func resolveEndpoint(ctx context.Context, host string) (string, error) {
 	if len(ips) > 0 {
 		return ips[0].IP.String(), nil
 	}
-	return "", errors.New("no endpoint address")
+	return "", stageError{stage: "bootstrap", err: errors.New("no endpoint address")}
+}
+
+type stageError struct {
+	stage string
+	err   error
+}
+
+func (e stageError) Error() string { return e.err.Error() }
+func (e stageError) Unwrap() error { return e.err }
+func failureStage(err error, fallback string) string {
+	var staged stageError
+	if errors.As(err, &staged) {
+		return staged.stage
+	}
+	return fallback
 }
 
 type jsonObject = map[string]any
@@ -118,6 +137,10 @@ func decodeConfig(text string) (jsonObject, error) {
 	return c, e
 }
 func prepareXray(ctx context.Context, c jsonObject) error {
+	return prepareXrayWithBinding(ctx, c, nil)
+}
+
+func prepareXrayWithBinding(ctx context.Context, c jsonObject, bindOverride func(jsonObject, string) error) error {
 	out := first(c["outbounds"])
 	stream := jObject(out["streamSettings"])
 	settings := jObject(out["settings"])
@@ -161,15 +184,18 @@ func prepareXray(ctx context.Context, c jsonObject) error {
 		}
 		peer["address"] = address
 	}
-	bind := func(s jsonObject, address string) error {
-		adapter, e := routeInterface(address)
-		if e != nil || strings.HasPrefix(adapter, "OneTunnel") {
-			return errors.New("physical uplink unavailable")
+	bind := bindOverride
+	if bind == nil {
+		bind = func(s jsonObject, address string) error {
+			adapter, e := routeInterface(address)
+			if e != nil || strings.HasPrefix(adapter, "OneTunnel") {
+				return errors.New("physical uplink unavailable")
+			}
+			sock := jObject(s["sockopt"])
+			sock["interface"] = adapter
+			s["sockopt"] = sock
+			return nil
 		}
-		sock := jObject(s["sockopt"])
-		sock["interface"] = adapter
-		s["sockopt"] = sock
-		return nil
 	}
 	if e := bind(stream, jString(peer["address"])); e != nil {
 		return e
@@ -213,7 +239,14 @@ func prepareXray(ctx context.Context, c jsonObject) error {
 	return nil
 }
 func discoverClock(ctx context.Context) (bool, string, error) {
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 4 * time.Second}
+	transport := &http.Transport{Proxy: nil}
+	if resolver, ok := ctx.Value(bootstrapKey{}).(*bootstrapResolver); ok && resolver.forceSecure {
+		dialer := &net.Dialer{}
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return resolveAndDialClockEndpoint(ctx, network, address, resolveEndpoint, dialer.DialContext)
+		}
+	}
+	client := &http.Client{Transport: transport, Timeout: 4 * time.Second}
 	defer client.CloseIdleConnections()
 	before := time.Now()
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.cloudflare.com/cdn-cgi/trace?onetunnel="+time.Now().Format("150405.000000000"), nil)
@@ -231,6 +264,19 @@ func discoverClock(ctx context.Context) (bool, string, error) {
 	server, e := resolveEndpoint(ctx, "time.cloudflare.com")
 	return true, server, e
 }
+
+func resolveAndDialClockEndpoint(ctx context.Context, network, address string, resolve func(context.Context, string) (string, error), dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ip, err := resolve(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return dial(ctx, network, net.JoinHostPort(ip, port))
+}
+
 func httpsCheck(ctx context.Context, proxyPort int) error {
 	transport := &http.Transport{Proxy: nil}
 	if proxyPort > 0 {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"golang.org/x/sys/windows"
 	"io"
 	"os"
@@ -15,10 +16,14 @@ import (
 )
 
 type Document struct {
-	Version             int
-	Profiles            []Profile
-	CollapsedGroups     []string
-	SubscriptionSources map[string]string
+	UserSettings          *UserPreferences `json:",omitempty"`
+	Version               int
+	Profiles              []Profile
+	FavoriteIDs           []string `json:",omitempty"`
+	CollapsedGroups       []string
+	SubscriptionSources   map[string]string
+	SubscriptionMetadata  map[string]SubscriptionMetadata `json:",omitempty"`
+	SubscriptionSchedules map[string]SubscriptionSchedule `json:",omitempty"`
 }
 type Store struct {
 	Root     string
@@ -100,18 +105,21 @@ func Protect(data []byte, encrypt bool) ([]byte, error) {
 	return append([]byte(nil), view...), nil
 }
 func (s *Store) lock() (func(), error) {
+	runtime.LockOSThread()
 	sum := sha256.Sum256([]byte(strings.ToUpper(s.Root)))
 	name := "Local\\OneTunnel.ProfileStore." + fmtHex(sum[:])
 	h, e := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(name))
 	if e != nil && e != windows.ERROR_ALREADY_EXISTS {
+		runtime.UnlockOSThread()
 		return nil, e
 	}
 	result, e := windows.WaitForSingleObject(h, 5000)
 	if e != nil || (result != windows.WAIT_OBJECT_0 && result != windows.WAIT_ABANDONED) {
 		windows.CloseHandle(h)
+		runtime.UnlockOSThread()
 		return nil, errors.New("Хранилище занято другим процессом.")
 	}
-	return func() { windows.ReleaseMutex(h); windows.CloseHandle(h) }, nil
+	return func() { windows.ReleaseMutex(h); windows.CloseHandle(h); runtime.UnlockOSThread() }, nil
 }
 func fmtHex(b []byte) string {
 	const hex = "0123456789abcdef"
@@ -185,12 +193,25 @@ func (s *Store) load() (Document, error) {
 		if d.Profiles[i].Group == "" {
 			d.Profiles[i].Group = "Без группы"
 		}
+		network, normalizeErr := protocol.NormalizeNetworkOptions(d.Profiles[i].Network)
+		if normalizeErr != nil || protocol.ValidateNetworkOptions(network, d.Profiles[i].Protocol, true) != nil {
+			return d, errors.New("Хранилище содержит неподдерживаемые сетевые параметры; исходный файл сохранён.")
+		}
+		d.Profiles[i].Network = network
 	}
 	for group, url := range d.SubscriptionSources {
 		if !SecureURL(url) {
 			delete(d.SubscriptionSources, group)
 		}
 	}
+	for group := range d.SubscriptionMetadata {
+		if _, ok := d.SubscriptionSources[group]; !ok {
+			delete(d.SubscriptionMetadata, group)
+		}
+	}
+	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
+	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
+	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
 	s.revision = sha256.Sum256(encrypted)
 	s.loaded = true
 	return d, nil
@@ -217,7 +238,13 @@ func (s *Store) Save(d Document) error {
 	}
 	seen := map[string]bool{}
 	groups := map[string]bool{}
-	for _, p := range d.Profiles {
+	for i := range d.Profiles {
+		network, normalizeErr := protocol.NormalizeNetworkOptions(d.Profiles[i].Network)
+		if normalizeErr != nil || protocol.ValidateNetworkOptions(network, d.Profiles[i].Protocol, true) != nil {
+			return errors.New("Хранилище содержит неподдерживаемые сетевые параметры; исходный файл сохранён.")
+		}
+		d.Profiles[i].Network = network
+		p := d.Profiles[i]
 		if e := Validate(p); e != nil {
 			return e
 		}
@@ -227,6 +254,13 @@ func (s *Store) Save(d Document) error {
 		seen[p.ID] = true
 		groups[p.Group] = true
 	}
+	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
+	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
+	for _, schedule := range d.SubscriptionSchedules {
+		if !validSchedule(schedule) {
+			return ErrImport
+		}
+	}
 	for group, source := range d.SubscriptionSources {
 		if !groups[group] {
 			delete(d.SubscriptionSources, group)
@@ -234,6 +268,12 @@ func (s *Store) Save(d Document) error {
 			return ErrImport
 		}
 	}
+	for group := range d.SubscriptionMetadata {
+		if !groups[group] || d.SubscriptionSources[group] == "" {
+			delete(d.SubscriptionMetadata, group)
+		}
+	}
+	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
 	data, e := json.Marshal(d)
 	if e != nil || len(data) > 32*1024*1024 {
 		return ErrImport

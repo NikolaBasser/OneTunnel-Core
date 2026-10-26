@@ -3,10 +3,13 @@ package profiles
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -92,6 +95,35 @@ func TestSubscriptionFormatsAndSafety(t *testing.T) {
 	}
 	if SecureURL("http://example.com") || SecureURL("https://user:pass@example.com") || !SecureURL("https://example.com/sub") {
 		t.Fatal("HTTPS validation")
+	}
+}
+
+func TestSubscriptionUserinfoMetadata(t *testing.T) {
+	valid := ParseSubscriptionUserinfo([]string{"upload=0; download=42; total=100; expire=253402300799; reset=monthly"})
+	if valid == nil || valid.Upload == nil || *valid.Upload != 0 || valid.Download == nil || *valid.Download != 42 || valid.Total == nil || *valid.Total != 100 || valid.Expire == nil || *valid.Expire != 253402300799 {
+		t.Fatal("valid partial/zero metadata not parsed")
+	}
+	for _, value := range []string{
+		"upload=1; upload=2", "upload=-1", "upload=+1", "download=1.5", "total=18446744073709551616", "expire=253402300800", "upload", strings.Repeat("a", 4097),
+	} {
+		if got := ParseSubscriptionUserinfo([]string{value}); got != nil {
+			t.Fatalf("malformed metadata accepted: %q", value)
+		}
+	}
+	if ParseSubscriptionUserinfo(nil) != nil || ParseSubscriptionUserinfo([]string{"reset=monthly"}) != nil || ParseSubscriptionUserinfo([]string{"upload=2", "download=3"}) != nil {
+		t.Fatal("absent, unknown-only, or duplicate header accepted")
+	}
+}
+
+func TestDownloadReadsProviderMetadataOverTrustedTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Subscription-Userinfo", "upload=17; download=25; total=100; expire=1900000000")
+		_, _ = w.Write([]byte(vless))
+	}))
+	defer server.Close()
+	result, err := downloadWithClient(context.Background(), server.URL, server.Client())
+	if err != nil || len(result.Profiles) != 1 || result.Metadata == nil || result.Metadata.Upload == nil || *result.Metadata.Upload != 17 {
+		t.Fatalf("download metadata: result=%+v err=%v", result, err)
 	}
 }
 func TestAmneziaCompressedImport(t *testing.T) {

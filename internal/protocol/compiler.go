@@ -22,6 +22,7 @@ var ErrConfiguration = errors.New("invalid configuration")
 var uuid = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type Plan struct {
+	SharedNative      bool `json:",omitempty"`
 	NativeSource      string
 	NativeShadowsocks bool
 	NeedsXray         bool
@@ -579,6 +580,13 @@ func Compile(source string, kind int, tun bool, localPort, bridgePort int, xrayP
 			outbound["udp_over_tcp"] = object{"enabled": true, "version": version}
 		}
 	}
+	config := proxyConfig(outbound, tun, localPort, xrayPath, p.NeedsXray)
+	b, _ := json.Marshal(config)
+	p.Proxy = string(b)
+	return p, nil
+}
+
+func proxyConfig(outbound object, tun bool, localPort int, xrayPath string, needsXray bool) object {
 	inbounds := []any{object{"type": "mixed", "tag": "local", "listen": "127.0.0.1", "listen_port": localPort}}
 	outbounds := []any{outbound}
 	route := object{"final": "proxy", "auto_detect_interface": true}
@@ -587,7 +595,7 @@ func Compile(source string, kind int, tun bool, localPort, bridgePort int, xrayP
 		inbounds = append(inbounds, object{"type": "tun", "tag": "tun-in", "interface_name": "OneTunnel", "address": []any{"172.30.19.1/30", "fdfe:dcba:9876::1/126"}, "auto_route": true, "strict_route": true, "dns_mode": "hijack", "route_address": []any{"0.0.0.0/1", "128.0.0.0/1", "::/1", "8000::/1"}, "stack": "mixed"})
 		config["dns"] = object{"servers": []any{object{"type": "https", "tag": "remote-dns", "server": "1.1.1.1", "server_port": 443, "path": "/dns-query", "tls": object{"enabled": true, "server_name": "cloudflare-dns.com"}, "detour": "proxy"}}, "final": "remote-dns"}
 		rules := []any{object{"inbound": []any{"tun-in"}, "action": "sniff"}, object{"port": 53, "action": "hijack-dns"}, object{"protocol": "dns", "action": "hijack-dns"}}
-		if p.NeedsXray {
+		if needsXray {
 			outbounds = append(outbounds, object{"type": "direct", "tag": "xray-uplink"})
 			rules = append([]any{object{"process_path": []any{xrayPath}, "action": "route", "outbound": "xray-uplink"}}, rules...)
 		}
@@ -595,9 +603,7 @@ func Compile(source string, kind int, tun bool, localPort, bridgePort int, xrayP
 	}
 	config["inbounds"] = inbounds
 	config["outbounds"] = outbounds
-	b, _ := json.Marshal(config)
-	p.Proxy = string(b)
-	return p, nil
+	return config
 }
 func tunnel(source string, kind int, full bool) (string, error) {
 	section := ""

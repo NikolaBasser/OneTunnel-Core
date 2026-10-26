@@ -64,6 +64,21 @@ func fakeManager(t *testing.T) (*Manager, *[]*fakeBackend) {
 func start() Request {
 	return Request{Version: 1, Command: "start", Profile: testProfile(), FullDevice: true}
 }
+
+func TestCanceledRequestNeverStartsBackend(t *testing.T) {
+	m, all := fakeManager(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 0; i < 128; i++ {
+		response := m.Dispatch(ctx, start())
+		if response.Error == nil || *response.Error != "operation_timeout" {
+			t.Fatalf("canceled request was accepted: %+v", response)
+		}
+	}
+	if (*all)[0].starts.Load() != 0 {
+		t.Fatal("canceled requests reached backend")
+	}
+}
 func command(s string) Request { return Request{Version: 1, Command: s} }
 func TestManagerSessionIdentityAndDuplicateStart(t *testing.T) {
 	m, all := fakeManager(t)

@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"io"
 	"regexp"
 	"strings"
 	"unicode/utf16"
@@ -24,6 +24,7 @@ var guid = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 type Profile struct {
 	Reliability *ReliabilityOptions        `json:"Reliability,omitempty"`
 	Transport   *protocol.TransportOptions `json:"Transport,omitempty"`
+	Network     *protocol.NetworkOptions   `json:"Network,omitempty"`
 	ID          string                     `json:"Id"`
 	Name        string                     `json:"Name"`
 	Protocol    int                        `json:"Protocol"`
@@ -39,30 +40,33 @@ type Request struct {
 	FullDevice bool      `json:"FullDevice"`
 }
 type State struct {
-	Reconnecting      bool    `json:"Reconnecting,omitempty"`
-	ReconnectAttempt  int     `json:"ReconnectAttempt,omitempty"`
-	Active            bool    `json:"Active"`
-	NeedsRecovery     bool    `json:"NeedsRecovery"`
-	TrafficLocked     bool    `json:"TrafficLocked"`
-	WholeDevice       bool    `json:"WholeDevice"`
-	FullDeviceMode    bool    `json:"FullDeviceMode"`
-	ClockSynchronized bool    `json:"ClockSynchronized"`
-	LocalPort         int     `json:"LocalPort"`
-	Status            string  `json:"Status"`
-	ProfileID         *string `json:"ProfileId"`
+	Reconnecting      bool                  `json:"Reconnecting,omitempty"`
+	ReconnectAttempt  int                   `json:"ReconnectAttempt,omitempty"`
+	Active            bool                  `json:"Active"`
+	NeedsRecovery     bool                  `json:"NeedsRecovery"`
+	TrafficLocked     bool                  `json:"TrafficLocked"`
+	WholeDevice       bool                  `json:"WholeDevice"`
+	FullDeviceMode    bool                  `json:"FullDeviceMode"`
+	ClockSynchronized bool                  `json:"ClockSynchronized"`
+	LocalPort         int                   `json:"LocalPort"`
+	Status            string                `json:"Status"`
+	ProfileID         *string               `json:"ProfileId"`
+	Statistics        *ConnectionStatistics `json:"Statistics,omitempty"`
 }
 type Response struct {
-	Revision uint64  `json:"Revision,omitempty"`
-	Version  int     `json:"Version"`
-	Instance string  `json:"Instance"`
-	State    State   `json:"State"`
-	Result   *string `json:"Result"`
-	Error    *string `json:"Error"`
+	Revision  uint64     `json:"Revision,omitempty"`
+	Version   int        `json:"Version"`
+	Instance  string     `json:"Instance"`
+	State     State      `json:"State"`
+	Result    *string    `json:"Result"`
+	Error     *string    `json:"Error"`
+	ErrorInfo *ErrorInfo `json:"ErrorInfo,omitempty"`
 }
 type BackendResult struct {
-	State  State   `json:"State"`
-	Result *string `json:"Result"`
-	Error  *string `json:"Error"`
+	State     State      `json:"State"`
+	Result    *string    `json:"Result"`
+	Error     *string    `json:"Error"`
+	ErrorInfo *ErrorInfo `json:"ErrorInfo,omitempty"`
 }
 
 func Validate(r Request) string {
@@ -89,8 +93,12 @@ func Validate(r Request) string {
 		if p.Reliability != nil && p.Reliability.UseFallbacks && !p.Reliability.AutoReconnect {
 			return "invalid_configuration"
 		}
+		policyMode := r.FullDevice || r.Command == "check-profile"
+		if protocol.ValidateNetworkOptions(p.Network, p.Protocol, policyMode) != nil {
+			return "invalid_configuration"
+		}
 		for _, candidate := range r.Fallbacks {
-			if candidate.ID == p.ID || candidate.Group != p.Group || !CompatibleFallback(*p, candidate, r.FullDevice) || Validate(Request{Version: Version, Command: "start", Profile: &candidate}) != "" {
+			if candidate.ID == p.ID || candidate.Group != p.Group || !CompatibleFallback(*p, candidate, r.FullDevice) || Validate(Request{Version: Version, Command: "start", Profile: &candidate, FullDevice: r.FullDevice}) != "" {
 				return "invalid_configuration"
 			}
 		}

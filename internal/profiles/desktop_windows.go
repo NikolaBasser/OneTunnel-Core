@@ -3,10 +3,10 @@ package profiles
 import (
 	"context"
 	"errors"
-	"golang.org/x/sys/windows"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,6 +73,7 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 	reply = a.desktopState
 	reply.Response.Error = response.Error
 	reply.Response.Result = response.Result
+	reply.Response.ErrorInfo = response.ErrorInfo
 	if response.Error != nil {
 		reply.Message = platform.ServiceErrorMessage(*response.Error)
 	} else {
@@ -101,13 +102,24 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			return before, nil
 		}
 		if before.Response.State.Active || before.Response.State.Reconnecting {
+			if err := a.inhibitUserAutoConnect(); err != nil {
+				a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after disconnect."
+			}
 			return a.desktopCall(ctx, "stop", nil, false), nil
 		}
 		r.Command = "connection.start"
 		return a.desktop(ctx, r)
 	case "status", "stop", "probe":
+		if command == "stop" {
+			if err := a.inhibitUserAutoConnect(); err != nil {
+				a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after disconnect."
+			}
+		}
 		return a.desktopCall(ctx, command, nil, false), nil
 	case "recover":
+		if err := a.inhibitUserAutoConnect(); err != nil {
+			a.automation().notice = "Automatic connection was inhibited, but current-user state could not be fully restored. Review user settings after recovery."
+		}
 		for _, name := range []string{"session.json", "kill-switch.json"} {
 			if existsProfileFile(a.Store.Root, name) {
 				var err error
@@ -153,7 +165,24 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 			a.desktopState.Prepared = &view
 			return before, nil
 		}
-		reply := a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+		var reply DesktopReply
+		if r.autoConnectPreferences != nil {
+			token := fmtHex(a.Store.revision[:])
+			u := a.automation()
+			if err := u.Transaction(func() error {
+				current, err := a.validateUserSettingsToken(token)
+				if err != nil || preferencesValue(current.UserSettings) != *r.autoConnectPreferences ||
+					!preferencesValue(current.UserSettings).AutoConnect || u.inhibited || u.inhibitionErr != nil {
+					return errUserSettings
+				}
+				reply = a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+		} else {
+			reply = a.desktopCall(ctx, "start", prepared.Selected, r.FullDevice)
+		}
 		view := presentationApplied(prepared)
 		reply.Prepared = &view
 		a.desktopState.Prepared = &view
@@ -167,9 +196,15 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 // for connection, and sent to WPF only on an explicit editor.load request.
 func presentationDocument(document Document) Document {
 	view := document
+	if document.UserSettings != nil {
+		preferences := *document.UserSettings
+		view.UserSettings = &preferences
+	}
 	view.Profiles = make([]Profile, len(document.Profiles))
 	copy(view.Profiles, document.Profiles)
+	view.FavoriteIDs = normalizeFavoriteIDs(document.FavoriteIDs, document.Profiles)
 	for i := range view.Profiles {
+		view.Profiles[i].Network = protocol.CloneNetworkOptions(document.Profiles[i].Network)
 		view.Profiles[i].Source = ""
 	}
 	view.SubscriptionSources = map[string]string{}
@@ -180,6 +215,7 @@ func presentationApplied(applied Applied) Applied {
 	view.Document = presentationDocument(applied.Document)
 	if view.Selected != nil {
 		p := *view.Selected
+		p.Network = protocol.CloneNetworkOptions(view.Selected.Network)
 		p.Source = ""
 		view.Selected = &p
 	}
