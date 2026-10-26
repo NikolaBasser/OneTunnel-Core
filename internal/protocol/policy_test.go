@@ -116,3 +116,22 @@ func TestPolicyAdditionalTargetEngines(t *testing.T) {
 		t.Fatal("missing explicit separate-engine rejection", err)
 	}
 }
+
+func TestPolicyPredictionRequiresDNSPortAndLANAddress(t *testing.T) {
+	for _, tc := range []struct {
+		n *NetworkOptions
+		q RouteQuery
+	}{
+		{nil, RouteQuery{Domain: "example.com", Network: "tcp"}},
+		{&NetworkOptions{AllowLAN: true}, RouteQuery{Domain: "example.com", Network: "tcp", Port: 443}},
+	} {
+		v, err := ExplainRoute(tc.n, tc.q)
+		if err != nil || v.Decision != "unknown" || v.Outbound != "" {
+			t.Fatal("guessed missing metadata", v, err)
+		}
+	}
+	v, err := ExplainRoute(&NetworkOptions{AllowLAN: true}, RouteQuery{IP: "192.168.1.2", Port: 443})
+	if err != nil || v.Decision != "direct" {
+		t.Fatal("LAN prediction", v, err)
+	}
+}

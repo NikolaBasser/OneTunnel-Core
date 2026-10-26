@@ -292,6 +292,10 @@ func ExplainRoute(options *NetworkOptions, q RouteQuery) (RoutePrediction, error
 		return RoutePrediction{}, ErrConfiguration
 	}
 	result := RoutePrediction{Decision: "proxy", Outbound: "proxy", Rule: -1, Reason: "default-policy", PredictionOnly: true}
+	if q.Port == 0 {
+		result.Decision, result.Outbound, result.Reason = "unknown", "", "required-metadata-missing"
+		return result, nil
+	}
 	if q.Port == 53 {
 		result.Decision = "dns"
 		result.Outbound = "configured-resolver"
@@ -321,7 +325,11 @@ func ExplainRoute(options *NetworkOptions, q RouteQuery) (RoutePrediction, error
 		result.Reason = "first-matching-rule"
 		return result, nil
 	}
-	if n.AllowLAN && q.IP != "" {
+	if n.AllowLAN && q.IP == "" {
+		result.Decision, result.Outbound, result.Reason = "unknown", "", "required-metadata-missing"
+		return result, nil
+	}
+	if n.AllowLAN {
 		ip, _ := netip.ParseAddr(q.IP)
 		if ip.IsPrivate() {
 			result.Decision = "direct"
