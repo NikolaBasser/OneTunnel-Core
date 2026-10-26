@@ -57,6 +57,11 @@ jobs:
           ./...
       - name: Build the complete standalone core bundle
         run: ./build.ps1 -GoExecutable (Get-Command go).Source -Output "$PWD/artifacts/core-bundle"
+      - name: Test acceptance guard without network effects
+        run: >-
+          go test -mod=readonly -count=1 -tags onetunnel_safety_test
+          -run 'TestAcceptance|TestRecovery'
+          ./cmd/onetunnel-acceptance ./internal/platform
       - name: Verify clean bundle identity
         run: |
           $manifest = Get-Content artifacts/core-bundle/core-bundle.json -Raw | ConvertFrom-Json

@@ -35,4 +35,5 @@ type ProfileCheck struct {
 	Milliseconds             int64
 	Message                  string
 	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
+	DNSLatencyMilliseconds   *int64 `json:",omitempty"`
 }

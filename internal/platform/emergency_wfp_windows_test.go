@@ -73,3 +73,21 @@ func TestEmergencyKnownTestProviderGUID(t *testing.T) {
 		t.Fatal("historical key derivation changed")
 	}
 }
+
+func TestEmergencyExpectedFingerprintRequiresExactProvider(t *testing.T) {
+	var fingerprint [32]byte
+	fingerprint[0] = 42
+	provider := wProvider{Display: wDisplayName("OneTunnel kill switch"), Flags: 1, Data: wBlob{Size: 32, Data: &fingerprint[0]}}
+	if !emergencyProviderFingerprintMatches(&provider, fingerprint) {
+		t.Fatal("expected owner rejected")
+	}
+	other := fingerprint
+	other[31] = 1
+	if emergencyProviderFingerprintMatches(&provider, other) || emergencyProviderFingerprintMatches(nil, fingerprint) {
+		t.Fatal("unexpected owner accepted")
+	}
+	provider.Display = wDisplayName("Another provider")
+	if emergencyProviderFingerprintMatches(&provider, fingerprint) {
+		t.Fatal("foreign metadata accepted")
+	}
+}

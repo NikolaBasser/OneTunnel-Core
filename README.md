@@ -92,10 +92,10 @@ licenses and applicable source-distribution obligations. No additional project-w
 is granted by this README.
 
 Group check results can be sorted by full check duration and filtered by outcome.
-An explicit best-result action selects a successful network check without connecting.
-WireGuard/AmneziaWG configuration-only checks are excluded. Results are kept only
+An explicit best-result action selects a successful HTTPS network check without connecting.
+WireGuard/AmneziaWG DNS-only and configuration-only checks are excluded. Results are kept only
 in user-host memory, become stale after storage changes, and can be cleared.
-The duration includes engine startup, HTTPS probing, and cleanup; it is not ping.
+The duration includes engine startup, the HTTPS or tunneled DNS probe, and cleanup; it is not ping.
 
 Selected-profile organization supports local copies and manual-group moves.
 Copies preserve protocol and transport/reliability options, receive a new ID and
@@ -158,7 +158,16 @@ Group checks report total check duration separately from successful HTTPS probe
 latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
 Saved shared-TUN DNS/routing policies are validated, then left unapplied during
 the local server check; infrastructure endpoint bootstrap stays encrypted.
-Native WG/AWG group checks remain configuration-only and do not report latency.
+Native WG/AWG group checks use the first eligible imported DNS address through the
+embedded userspace transport, preserving original peer AllowedIPs and local address
+families. The fixed root SOA query uses no OS adapter or system DNS changes; endpoint
+hostname bootstrap is encrypted without a system-resolver fallback. If no eligible
+imported DNS target exists, or the build lacks embedded AWG, the result remains
+configuration-only. Successful native DNS checks report separate DNS exchange latency,
+which may include the initial handshake. They do not establish public internet access,
+DNSSEC validation, or absence of DNS/IPv6 leaks, and are excluded from HTTPS-based
+best-result selection. Saved shared-TUN policies are validated but not applied to this
+imported-DNS probe.
 
 AWG/WireGuard with nonempty full-device network preferences use the shared TUN
 and an in-process AWG userspace transport. This mode supports TCP/UDP, preserves

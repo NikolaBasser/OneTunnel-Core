@@ -14,6 +14,7 @@ type GroupCheckRow struct {
 	Success, NetworkTest     bool
 	Milliseconds             int64
 	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
+	DNSLatencyMilliseconds   *int64 `json:",omitempty"`
 }
 type GroupCheckResult struct {
 	Group     string
@@ -63,7 +64,10 @@ func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckR
 		if !check.Success || !check.NetworkTest || check.HTTPSLatencyMilliseconds != nil && *check.HTTPSLatencyMilliseconds < 0 {
 			check.HTTPSLatencyMilliseconds = nil
 		}
-		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message, HTTPSLatencyMilliseconds: check.HTTPSLatencyMilliseconds})
+		if !check.Success || !check.NetworkTest || check.DNSLatencyMilliseconds != nil && *check.DNSLatencyMilliseconds < 0 {
+			check.DNSLatencyMilliseconds = nil
+		}
+		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message, HTTPSLatencyMilliseconds: check.HTTPSLatencyMilliseconds, DNSLatencyMilliseconds: check.DNSLatencyMilliseconds})
 	}
 	if err := ctx.Err(); err != nil {
 		return GroupCheckResult{}, errors.New("Проверка прервана: служба недоступна или подключение занято")
@@ -79,6 +83,10 @@ func cloneGroupCheckRows(rows []GroupCheckRow) []GroupCheckRow {
 		if copy[i].HTTPSLatencyMilliseconds != nil {
 			value := *copy[i].HTTPSLatencyMilliseconds
 			copy[i].HTTPSLatencyMilliseconds = &value
+		}
+		if copy[i].DNSLatencyMilliseconds != nil {
+			value := *copy[i].DNSLatencyMilliseconds
+			copy[i].DNSLatencyMilliseconds = &value
 		}
 	}
 	return copy

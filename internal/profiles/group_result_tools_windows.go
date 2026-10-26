@@ -17,6 +17,7 @@ type GroupResultDisplayRow struct {
 	Success, NetworkTest     bool
 	Milliseconds             int64
 	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
+	DNSLatencyMilliseconds   *int64 `json:",omitempty"`
 	TimingLabel              string
 }
 
@@ -29,6 +30,10 @@ type GroupResultsView struct {
 
 func eligibleGroupResult(row GroupCheckRow) bool {
 	return row.Success && row.NetworkTest && row.Milliseconds >= 0
+}
+
+func eligibleGroupSelection(row GroupCheckRow) bool {
+	return eligibleGroupResult(row) && row.DNSLatencyMilliseconds == nil
 }
 
 func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsView, error) {
@@ -66,6 +71,9 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 		if !row.Success || !row.NetworkTest || row.HTTPSLatencyMilliseconds != nil && *row.HTTPSLatencyMilliseconds < 0 {
 			row.HTTPSLatencyMilliseconds = nil
 		}
+		if !row.Success || !row.NetworkTest || row.DNSLatencyMilliseconds != nil && *row.DNSLatencyMilliseconds < 0 {
+			row.DNSLatencyMilliseconds = nil
+		}
 		eligible := eligibleGroupResult(row)
 		switch filter {
 		case "reachable":
@@ -90,10 +98,13 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 			if row.Success && row.HTTPSLatencyMilliseconds != nil && *row.HTTPSLatencyMilliseconds >= 0 {
 				label += fmt.Sprintf(" · %d ms HTTPS latency (not ICMP RTT)", *row.HTTPSLatencyMilliseconds)
 			}
+			if row.Success && row.DNSLatencyMilliseconds != nil {
+				label += fmt.Sprintf(" · %d ms DNS exchange latency (may include initial handshake; not public internet access)", *row.DNSLatencyMilliseconds)
+			}
 		}
 		view.Rows = append(view.Rows, GroupResultDisplayRow{
 			ID: row.ID, Name: row.Name, Message: row.Message, Success: row.Success,
-			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label, HTTPSLatencyMilliseconds: row.HTTPSLatencyMilliseconds,
+			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label, HTTPSLatencyMilliseconds: row.HTTPSLatencyMilliseconds, DNSLatencyMilliseconds: row.DNSLatencyMilliseconds,
 		})
 	}
 	view.Stale = a.Store == nil
@@ -120,7 +131,7 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 
 func hasEligibleGroupResult(rows []GroupCheckRow) bool {
 	for _, row := range rows {
-		if eligibleGroupResult(row) {
+		if eligibleGroupSelection(row) {
 			return true
 		}
 	}
@@ -139,7 +150,7 @@ func (a *Application) groupResultsFastest(token string) (string, error) {
 	var fastest *GroupCheckRow
 	for i := range batch.result.Rows {
 		row := &batch.result.Rows[i]
-		if eligibleGroupResult(*row) && (fastest == nil || row.Milliseconds < fastest.Milliseconds) {
+		if eligibleGroupSelection(*row) && (fastest == nil || row.Milliseconds < fastest.Milliseconds) {
 			fastest = row
 		}
 	}

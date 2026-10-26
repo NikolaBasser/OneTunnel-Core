@@ -126,3 +126,10 @@
 !/internal/profiles/user_automation_recovery_windows_test.go
 
 !/internal/platform/reliability_state_windows_test.go
+
+!/internal/embeddedawg/probe_test.go
+!/internal/platform/native_group_probe_enabled_windows_test.go
+
+!/internal/platform/acceptance_permit_safety_windows_test.go
+
+!/cmd/onetunnel-acceptance/plan_windows_test.go

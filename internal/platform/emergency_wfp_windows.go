@@ -232,6 +232,10 @@ func selectEmergencyProviders(objects []recoveryObjects, key *windows.GUID) ([]r
 }
 
 func recoverEmergencyWFP(key *windows.GUID) error {
+	return recoverEmergencyWFPExpected(key, nil)
+}
+
+func recoverEmergencyWFPExpected(key *windows.GUID, expected *[32]byte) error {
 	h, err := openWFP()
 	if err != nil {
 		return err
@@ -246,6 +250,23 @@ func recoverEmergencyWFP(key *windows.GUID) error {
 			_ = wCall("FwpmTransactionAbort0", uintptr(h))
 		}
 	}()
+	if expected != nil {
+		if key == nil {
+			return errors.New("expected recovery requires one provider")
+		}
+		provider, lookupErr := lookupTrafficProvider(h, key)
+		if lookupErr == windows.Errno(0x80320005) {
+			return nil
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		matches := emergencyProviderFingerprintMatches(provider, *expected)
+		freeTrafficProvider(provider)
+		if !matches {
+			return errors.New("provider does not match the expected recovery owner")
+		}
+	}
 	objects, err := emergencyObjects(h)
 	if err != nil {
 		return err
@@ -275,4 +296,16 @@ func recoverEmergencyWFP(key *windows.GUID) error {
 	}
 	committed = true
 	return nil
+}
+
+func emergencyProviderFingerprintMatches(provider *wProvider, expected [32]byte) bool {
+	if !emergencyProviderMatches(provider) {
+		return false
+	}
+	for i, value := range unsafe.Slice(provider.Data.Data, 32) {
+		if value != expected[i] {
+			return false
+		}
+	}
+	return true
 }

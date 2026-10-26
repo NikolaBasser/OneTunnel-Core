@@ -206,6 +206,26 @@ func (r *Runtime) checkProfileWithProbeDirectory(ctx context.Context, p *control
 		}
 		if err != nil {
 			result.Message = "Invalid configuration."
+		} else {
+			network, latency, probeErr := nativeGroupDNSProbe(ctx, p.Source, p.Protocol)
+			result.NetworkTest = network
+			if network {
+				result.Success = probeErr == nil
+				result.DNSLatencyMilliseconds = latency
+				result.Message = "Tunneled native DNS check succeeded; this does not establish public internet access."
+				if probeErr != nil {
+					result.Message = probeErr.Error()
+				}
+			} else {
+				result.Message = "Configuration validated only; no eligible imported DNS target within peer routes and address families, or embedded native probing is unavailable."
+				if probeErr != nil {
+					result.Success = false
+					result.Message = probeErr.Error()
+				}
+			}
+			if policyValidated {
+				result.Message += " Saved DNS/routing policy was validated only; this probe used imported DNS and original peer routes."
+			}
 		}
 	} else {
 		root, err := os.MkdirTemp(r.root, "profile-check-")
