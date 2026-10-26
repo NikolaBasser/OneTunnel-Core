@@ -138,3 +138,6 @@
 !/internal/platform/proxy_probe_safety_windows_test.go
 
 !/internal/platform/statistics_acceptance_safety_windows_test.go
+
+!/internal/platform/https_probe_budget_windows_test.go
+!/internal/platform/reliability_acceptance_safety_windows_test.go

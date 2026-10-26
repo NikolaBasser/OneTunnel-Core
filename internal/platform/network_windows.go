@@ -309,20 +309,39 @@ func checkHTTPSProbes(ctx context.Context, transport http.RoundTripper, targets 
 func runHTTPSProbes(ctx context.Context, transport http.RoundTripper, targets []httpsProbe) error {
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	var last error = errors.New("no HTTPS probe succeeded")
-	for _, target := range targets {
-		req, e := http.NewRequestWithContext(ctx, "GET", target.URL, nil)
+	for index, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		budget := 5 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			// Reserve a fair share of the parent deadline for the remaining fallback sites.
+			budget = min(budget, time.Until(deadline)/time.Duration(len(targets)-index))
+			if budget <= 0 {
+				return context.DeadlineExceeded
+			}
+		}
+		attempt, cancel := context.WithTimeout(ctx, budget)
+		req, e := http.NewRequestWithContext(attempt, "GET", target.URL, nil)
 		if e != nil || req.URL.Scheme != "https" {
+			cancel()
 			return errors.New("invalid HTTPS probe target")
 		}
 		response, e := client.Do(req)
 		if e == nil {
 			data, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
 			response.Body.Close()
-			if readErr == nil && response.StatusCode == target.Status && (target.Marker == "" || strings.Contains(string(data), target.Marker)) {
+			succeeded := readErr == nil && response.StatusCode == target.Status && (target.Marker == "" || strings.Contains(string(data), target.Marker))
+			cancel()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if succeeded {
 				return nil
 			}
 			last = errors.New("unexpected HTTPS response")
 		} else {
+			cancel()
 			last = e
 		}
 		if ctx.Err() != nil {
