@@ -10,7 +10,10 @@ import (
 )
 
 func startNativeUserspaceTransport(plan *embeddedawg.Plan) (*embeddedawg.Transport, error) {
-	uplink, err := sharedNativePhysicalInterface(plan.Endpoint(), routeInterface, net.InterfaceByName)
+	return startNativeUserspaceTransportWithRoute(plan, routeInterface)
+}
+func startNativeUserspaceTransportWithRoute(plan *embeddedawg.Plan, route func(string) (string, error)) (*embeddedawg.Transport, error) {
+	uplink, err := sharedNativePhysicalInterface(plan.Endpoint(), route, net.InterfaceByName)
 	if err != nil {
 		return nil, err
 	}

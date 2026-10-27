@@ -2,13 +2,14 @@ package platform
 
 import (
 	"context"
-	"encoding/json"
-	"os"
+	"errors"
+	"net"
+	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
-	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
 type qualitySample struct {
@@ -26,7 +27,7 @@ type qualitySelection struct {
 }
 
 func qualityEligible(p control.Profile, full bool) bool {
-	return p.Reliability != nil && p.Reliability.AutoSelect && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks && !full && p.Protocol >= 2 && protocol.NetworkOptionsEmpty(p.Network)
+	return p.Reliability != nil && p.Reliability.AutoSelect && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks
 }
 
 func (q *qualitySelection) reset(now time.Time) {
@@ -89,47 +90,73 @@ func (q *qualitySelection) choose(targets []control.Profile, index int, now time
 	return index
 }
 
-// Proxy-only probes have separate engines and journals. Never probe through an active TUN.
+// Probes have separate engines, physically bound outer sockets and no OS adapter.
 func (r *Runtime) measureQuality(ctx context.Context, current time.Duration) int {
 	q := r.retry.quality
-	if q == nil || r.session == nil || r.session.Kind != "proxy" || r.session.FullDevice || r.lock.needed() || len(r.retry.targets) < 2 {
+	if q == nil || r.session == nil || len(r.retry.targets) < 2 {
 		return 0
 	}
 	q.record(r.retry.targets[0].ID, qualitySample{time.Now(), current, true})
 	q.cursor = q.cursor%(len(r.retry.targets)-1) + 1
 	index := q.cursor
 	p := r.retry.targets[index]
-	if p.Protocol < 2 || !protocol.NetworkOptionsEmpty(p.Network) {
-		return 0
-	}
-	root, err := os.MkdirTemp(r.root, "quality-")
-	if err != nil {
-		q.record(p.ID, qualitySample{at: time.Now()})
-		return 0
-	}
-	if err = privateDirectory(root); err != nil {
-		_ = os.Remove(root)
-		return 0
-	}
-	probe := &Runtime{directory: r.directory, root: root, lock: trafficLock{owner: "OneTunnel.Quality", root: root}, forceSecureBootstrap: r.forceSecureBootstrap}
-	result, err := probe.checkProfile(ctx, &p)
-	// A failed cleanup must remain recoverable; never discard its journal.
-	if err != nil {
+	latency, err := r.probeQuality(ctx, p)
+	if errors.Is(err, errQualityCleanup) {
 		r.retry.quality = nil
+		r.publish("Автовыбор остановлен: ошибка очистки проверочного движка")
 		return 0
 	}
-	_ = os.Remove(root)
 	if ctx.Err() != nil {
 		return 0
 	}
-	var check control.ProfileCheck
-	if result == nil || json.Unmarshal([]byte(*result), &check) != nil {
-		return 0
-	}
-	sample := qualitySample{at: time.Now(), ok: check.Success && check.NetworkTest && check.HTTPSLatencyMilliseconds != nil}
-	if sample.ok {
-		sample.latency = time.Duration(*check.HTTPSLatencyMilliseconds) * time.Millisecond
-	}
+	sample := qualitySample{at: time.Now(), ok: err == nil, latency: latency}
 	q.record(p.ID, sample)
 	return q.choose(r.retry.targets, index, time.Now())
+}
+
+func (r *Runtime) captureQualityUplinks() {
+	if r.qualityUplink == nil {
+		r.qualityUplink = map[bool]string{}
+	}
+	for _, address := range []string{"1.1.1.1", "2606:4700:4700::1111"} {
+		if name, err := routeInterface(address); err == nil && validateSharedNativeUplink(name) == nil {
+			r.qualityUplink[net.ParseIP(address).To4() == nil] = name
+		}
+	}
+}
+func (r *Runtime) qualityInterface(address string) (string, error) {
+	name, err := routeInterface(address)
+	if err == nil && !strings.HasPrefix(strings.ToLower(name), "onetunnel") {
+		return name, nil
+	}
+	name = r.qualityUplink[net.ParseIP(address).To4() == nil]
+	if err = validateSharedNativeUplink(name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+func (r *Runtime) qualityCurrentHealth(ctx context.Context) error {
+	if r.backendPort > 0 {
+		return httpsCheck(ctx, r.backendPort)
+	}
+	if r.session == nil {
+		return context.Canceled
+	}
+	dialer, err := interfaceDialer(r.session.TunnelName)
+	if err != nil {
+		return err
+	}
+	transport := &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ip, err := secureBootstrapLookup(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+	}}
+	defer transport.CloseIdleConnections()
+	return checkHTTPSProbes(ctx, transport, []httpsProbe{{"https://example.com/", 200, "Example Domain"}, {"https://www.gstatic.com/generate_204", 204, ""}, {"https://captive.apple.com/hotspot-detect.html", 200, "<TITLE>Success</TITLE>"}})
 }

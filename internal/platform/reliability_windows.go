@@ -52,7 +52,11 @@ func (r *Runtime) retryContext() (context.Context, context.CancelFunc) {
 
 // Called with the operation mutex held. No timer ever removes traffic policy.
 func (r *Runtime) maintainConnection() {
-	r.maintainConnectionWith(retryEffects{now: time.Now, health: r.connectionHealth, disconnect: r.disconnectMode, start: r.start, activate: r.activateStatistics, quality: r.measureQuality})
+	health := r.connectionHealth
+	if r.retry.quality != nil {
+		health = r.qualityCurrentHealth
+	}
+	r.maintainConnectionWith(retryEffects{now: time.Now, health: health, disconnect: r.disconnectMode, start: r.start, activate: r.activateConnection, quality: r.measureQuality})
 }
 
 type retryEffects struct {
@@ -101,6 +105,7 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 		}
 	}
 	if r.retry.attempt >= 9 {
+		r.closeFront()
 		r.retry.targets = nil
 		r.retrying = false
 		r.transportFailed = true
@@ -112,6 +117,7 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 	r.publish("Переподключение · попытка " + itoa(r.retry.attempt) + " из 9")
 	retain := r.lock.needed()
 	if err := effects.disconnect(ctx, retain); err != nil {
+		r.closeFront()
 		r.retry.targets = nil
 		r.retrying = false
 		r.transportFailed = true
@@ -162,6 +168,7 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 	done()
 	r.transportFailed = true
 	if cleanupErr != nil {
+		r.closeFront()
 		r.retry.targets = nil
 		r.retrying = false
 	}

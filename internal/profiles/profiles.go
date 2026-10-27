@@ -192,11 +192,8 @@ func Parse(name, source string, requested *int) (Profile, error) {
 
 func Validate(p Profile) error {
 	check := p
-	if p.Reliability != nil && p.Reliability.AutoSelect && !protocol.NetworkOptionsEmpty(p.Network) {
-		return ErrImport
-	}
 	check.Network = nil // Stored policy is validated independently of runtime mode.
-	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &check, FullDevice: check.Reliability == nil || !check.Reliability.AutoSelect}); e != "" {
+	if e := control.Validate(control.Request{Version: 1, Command: "start", Profile: &check, FullDevice: true}); e != "" {
 		return ErrImport
 	}
 	if !ValidName(p.Name) || !ValidName(p.Group) {

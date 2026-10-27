@@ -276,9 +276,15 @@ retry path and verifies HTTPS before promotion. Failures invalidate quality
 history, and ordinary outage fallback remains available. Stop cancels probes.
 Up to eight backups are visited in order; larger groups take longer to qualify.
 
-This opt-in mode currently rejects native WG/AWG, whole-device TUN and custom
+Quality selection supports proxy, full-device TUN and WG/AWG, preserving saved
 DNS/routing policy. It measures HTTPS latency and reachability, not throughput.
-A switch creates a new connection/statistics session and local proxy port;
-clients must follow service state. Existing explicit system-proxy ownership is
-restored when the connection changes and requires explicit activation again.
+A switch creates a new connection/statistics session. Proxy-only quality sessions
+keep a stable loopback frontend until explicit stop or terminal failure, so an
+existing explicit system-proxy lease survives reconnects. The frontend has no
+direct fallback and closes old flows before replacing a backend.
 The manual group-check history is separate from service quality decisions.
+
+Quality probes never create OS adapters or alter routes. They retain configured DNS
+and policy, bind outer transports to physical interfaces, and reject bypass paths
+as proof of primary-server quality. Native probes use separate userspace peers;
+reusing the active peer identity is prohibited to prevent WireGuard roaming.

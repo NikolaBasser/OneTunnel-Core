@@ -72,7 +72,11 @@ func (r *Runtime) connectionHealthWithHTTPS(ctx context.Context, httpsProbe func
 		}
 		return health.NativeHealth(ctx)
 	}
-	return httpsProbe(ctx, r.snapshot().LocalPort)
+	port := r.snapshot().LocalPort
+	if r.backendPort > 0 {
+		port = r.backendPort
+	}
+	return httpsProbe(ctx, port)
 }
 func hasSharedNativeTransport(engine interface{ Close() error }) bool {
 	native, ok := engine.(interface{ NativeDone() <-chan struct{} })

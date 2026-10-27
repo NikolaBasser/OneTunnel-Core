@@ -9,13 +9,13 @@ func TestQualitySelectionValidation(t *testing.T) {
 		t.Fatal("valid proxy quality mode rejected")
 	}
 	r.FullDevice = true
-	if Validate(r) == "" {
-		t.Fatal("unverified TUN quality mode accepted")
+	if Validate(r) != "" {
+		t.Fatal("TUN quality mode rejected")
 	}
 	r.FullDevice = false
 	p.Protocol = 0
-	if Validate(r) == "" {
-		t.Fatal("native quality mode accepted")
+	if Validate(r) != "" {
+		t.Fatal("native quality mode rejected")
 	}
 	p.Protocol = 6
 	p.Reliability.UseFallbacks = false

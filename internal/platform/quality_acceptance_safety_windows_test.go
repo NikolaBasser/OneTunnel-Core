@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +87,36 @@ func TestQualityLiveVMSelectionAndFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	initialSession := reply.State.Statistics.SessionID
+	registry := newIsolatedProxyRegistry(t)
+	leaseProxy := newAcceptanceProxy(t, registry)
+	address := net.JoinHostPort("127.0.0.1", itoa(reply.State.LocalPort))
+	lease := enableAcceptanceLeaseAt(t, leaseProxy, address)
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	monitorDone := make(chan error, 1)
+	go func() {
+		lost, e := monitorProxyLeaseOwnerAndListener(func(interval time.Duration) (bool, error) {
+			select {
+			case <-monitorCtx.Done():
+				return true, nil
+			case <-time.After(interval):
+				return false, nil
+			}
+		}, func() (bool, error) { return leaseProxy.Owns(lease) }, probeLoopbackListener, address, 2*time.Second, 3)
+		if lost && e == nil {
+			e = errors.New("watchdog observed lost stable listener")
+		}
+		monitorDone <- e
+	}()
+	defer func() {
+		stopMonitor()
+		if e := <-monitorDone; e != nil {
+			t.Error(e)
+		}
+		if _, e := leaseProxy.Disable(lease); e != nil {
+			t.Error(e)
+		}
+		assertIsolatedBaseline(t, registry, map[string]RawRegistryValue{})
+	}()
 	waitFor := func(expected string) control.State {
 		for ctx.Err() == nil {
 			state := r.snapshot()
@@ -97,6 +129,12 @@ func TestQualityLiveVMSelectionAndFallback(t *testing.T) {
 		return control.State{}
 	}
 	selected := waitFor(b.ID)
+	if selected.LocalPort != reply.State.LocalPort || !selected.ProxyListenerStable {
+		t.Fatal("proxy endpoint changed during quality switch")
+	}
+	if owns, e := leaseProxy.Owns(lease); e != nil || !owns {
+		t.Fatal("proxy lease changed during automatic selection", e)
+	}
 	if time.Since(started) < 2*time.Minute || selected.Statistics == nil || selected.Statistics.SessionID == initialSession {
 		t.Fatal("hold/session boundary not respected")
 	}
@@ -113,6 +151,12 @@ func TestQualityLiveVMSelectionAndFallback(t *testing.T) {
 	}
 	fast.stop()
 	restored := waitFor(p.ID)
+	if restored.LocalPort != reply.State.LocalPort {
+		t.Fatal("proxy endpoint changed during outage fallback")
+	}
+	if owns, e := leaseProxy.Owns(lease); e != nil || !owns {
+		t.Fatal("proxy lease changed during outage fallback", e)
+	}
 	if err = httpsCheck(ctx, restored.LocalPort); err != nil {
 		t.Fatal(err)
 	}

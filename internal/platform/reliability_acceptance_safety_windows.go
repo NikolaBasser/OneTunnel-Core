@@ -41,7 +41,7 @@ func acceptanceConnectTarget(address string) bool {
 	if err != nil || port != "443" {
 		return false
 	}
-	return host == "example.com" || host == "www.gstatic.com" || host == "captive.apple.com"
+	return host == "example.com" || host == "www.gstatic.com" || host == "captive.apple.com" || host == "1.1.1.1"
 }
 func acceptanceRestored(state control.State, profile, previousSession string) bool {
 	return statisticsActive(state) && !state.Reconnecting && state.ReconnectAttempt == 0 && !state.TrafficLocked && !state.WholeDevice && state.ProfileID != nil && *state.ProfileID == profile && state.Statistics != nil && state.Statistics.SessionID != "" && state.Statistics.SessionID != previousSession && state.LocalPort > 0

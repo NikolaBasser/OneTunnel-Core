@@ -23,6 +23,28 @@ type fakeUserProxy struct {
 	conflict                      bool
 }
 
+func TestUserProxyKeepsStableEndpointThroughQualityReconnect(t *testing.T) {
+	for _, stable := range []bool{false, true} {
+		a, proxy, _, _, _ := automationFixture(t)
+		saveAutomation(t, a, UserPreferences{UseSystemProxy: true})
+		a.UserAutomation.proxy = proxy
+		a.UserAutomation.lease = "owned"
+		a.UserAutomation.proxyAddress = "127.0.0.1:11080"
+		a.ServiceCall = func(context.Context, control.Request) (control.Response, int64, error) {
+			return control.Response{Version: 1, Instance: "test", State: control.State{Reconnecting: true, NeedsRecovery: true, LocalPort: 11080, ProxyListenerStable: stable}}, 1, nil
+		}
+		if _, err := a.tickUserSettings(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if stable && (proxy.disabled != 0 || a.UserAutomation.lease != "owned") {
+			t.Fatal("stable reconnect released explicit proxy ownership")
+		}
+		if !stable && (proxy.disabled != 1 || a.UserAutomation.lease != "") {
+			t.Fatal("ordinary lost listener retained ownership")
+		}
+	}
+}
+
 func (p *fakeUserProxy) Owns(string) (bool, error) { return !p.ownershipLost, nil }
 
 func (p *fakeUserProxy) Enable(address string) (string, error) {
