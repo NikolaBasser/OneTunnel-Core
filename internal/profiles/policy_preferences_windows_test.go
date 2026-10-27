@@ -18,7 +18,7 @@ func TestPolicyStoreEditorAnalysisAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := &NetworkInput{Mode: "default", RulesText: `{"Targets":[{"Name":"work","Protocol":3,"Source":"socks5://user:POLICY-SECRET@127.0.0.1:18080"}],"RuleSets":[{"Name":"sites","Members":[{"Kind":"domain-suffix","Value":"example.com"}]}],"Rules":[{"Kind":"rule-set","Value":"sites","Action":"proxy","Outbound":"work","Network":"tcp","Port":"443"}]}`}
+	input := &NetworkInput{Mode: "default", RulesText: `{"Targets":[{"Name":"work","Protocol":3,"Via":"@primary","Source":"socks5://user:POLICY-SECRET@127.0.0.1:18080"}],"RuleSets":[{"Name":"sites","Members":[{"Kind":"domain-suffix","Value":"example.com"}]}],"Rules":[{"Kind":"rule-set","Value":"sites","Action":"proxy","Outbound":"work","Network":"tcp","Port":"443"}]}`}
 	metadata, err := app.saveNetworkPreferences(Request{ID: p.ID, Token: view.Token, NetworkInput: input})
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestPolicyStoreEditorAnalysisAndBackup(t *testing.T) {
 		t.Fatal("list response leaked policy credentials")
 	}
 	original, err := store.Load()
-	if err != nil || !strings.Contains(original.Profiles[0].Network.Targets[0].Source, "POLICY-SECRET") {
+	if err != nil || !strings.Contains(original.Profiles[0].Network.Targets[0].Source, "POLICY-SECRET") || original.Profiles[0].Network.Targets[0].Via != "@primary" {
 		t.Fatal("encrypted store lost target", err)
 	}
 	encrypted, err := os.ReadFile(filepath.Join(store.Root, "profiles.bin"))
@@ -73,7 +73,7 @@ func TestPolicyStoreEditorAnalysisAndBackup(t *testing.T) {
 }
 
 func TestPolicyAdvancedEditorRoundTrip(t *testing.T) {
-	raw := `{"Targets":[{"Name":"work","Protocol":3,"Source":"socks5://127.0.0.1:18080"}],"RuleSets":[{"Name":"sites","Members":[{"Kind":"domain-suffix","Value":"example.com"}]}],"Rules":[{"Kind":"rule-set","Value":"sites","Action":"proxy","Outbound":"work","Network":"tcp","Port":"443","Process":"C:\\Apps\\Browser.exe"}]}`
+	raw := `{"Targets":[{"Name":"work","Protocol":3,"Via":"@primary","Source":"socks5://127.0.0.1:18080"}],"RuleSets":[{"Name":"sites","Members":[{"Kind":"domain-suffix","Value":"example.com"}]}],"Rules":[{"Kind":"rule-set","Value":"sites","Action":"proxy","Outbound":"work","Network":"tcp","Port":"443","Process":"C:\\Apps\\Browser.exe"}]}`
 	options, err := (NetworkInput{Mode: "default", RulesText: raw}).Parse()
 	if err != nil {
 		t.Fatal(err)

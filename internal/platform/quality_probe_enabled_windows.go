@@ -93,7 +93,7 @@ func (r *Runtime) probeQuality(ctx context.Context, p control.Profile) (latency 
 			return 0, e
 		}
 		out["server"] = address
-		if !net.ParseIP(address).IsLoopback() {
+		if !net.ParseIP(address).IsLoopback() && jString(out["detour"]) == "" {
 			name, e := r.qualityInterface(address)
 			if e != nil {
 				return 0, e

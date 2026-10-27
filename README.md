@@ -288,3 +288,21 @@ Quality probes never create OS adapters or alter routes. They retain configured 
 and policy, bind outer transports to physical interfaces, and reject bypass paths
 as proof of primary-server quality. Native probes use separate userspace peers;
 reusing the active peer identity is prohibited to prevent WireGuard roaming.
+
+Proxy policy targets support `Via` for bounded chains. An omitted value retains
+an independent outbound. `"Via":"@primary"` sends that target through the selected
+profile; a target name sends it through that named target. At most eight targets
+are allowed; missing links, self-links and cycles are rejected before engine
+startup. For example, this routes TCP through entry -> middle -> exit:
+
+```json
+{"Targets":[{"Name":"middle","Protocol":3,"Source":"socks5://middle.example:1080","Via":"@primary"},{"Name":"exit","Protocol":6,"Source":"http://exit.example:8080","Via":"middle"}],"Rules":[{"Kind":"network","Value":"tcp","Action":"proxy","Outbound":"exit"}]}
+```
+
+DNS keeps its existing configured resolver path through the primary profile;
+this example does not change DNS to the exit. Each hop must support the requested
+transport; HTTP chains provide TCP, and UDP requires UDP-capable hops throughout.
+Additional hops use the existing engine-native target scope; standalone Xray or
+native OS-tunnel targets are still rejected. Chain failure never substitutes an
+independent direct transport. Quality probes can measure a policy chain only
+when its transport dependency actually reaches the selected primary profile.

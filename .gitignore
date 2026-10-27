@@ -159,3 +159,5 @@
 !/internal/control/quality_test.go
 !/internal/platform/quality_acceptance_safety_windows_test.go
 !/internal/platform/proxy_front_windows_test.go
+!/internal/protocol/chain_test.go
+!/internal/platform/chain_acceptance_safety_windows_test.go
