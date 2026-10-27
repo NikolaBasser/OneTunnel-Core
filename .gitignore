@@ -117,6 +117,7 @@
 
 !/internal/platform/group_latency_windows_test.go
 !/internal/profiles/group_latency_windows_test.go
+!/internal/profiles/group_quality_windows_test.go
 !/internal/platform/profile_check_bootstrap_windows_test.go
 !/internal/platform/runtime_safety_windows_test.go
 !/internal/protocol/native_policy_test.go
