@@ -609,7 +609,7 @@ func tunnel(source string, kind int, full bool) (string, error) {
 	section := ""
 	interfaces, peers := 0, 0
 	fields := map[string]string{}
-	awg := regexp.MustCompile(`^(Jc|Jmin|Jmax|S[1-4]|H[1-4]|I[1-5])$`)
+	awg := regexp.MustCompile(`(?i)^(` + AWGFieldPattern + `)$`)
 	for _, raw := range strings.Split(source, "\n") {
 		line := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
 		if line == "" {
@@ -636,6 +636,11 @@ func tunnel(source string, kind int, full bool) (string, error) {
 			return "", ErrConfiguration
 		}
 		fields[k] = value
+	}
+	if kind == 0 {
+		if err := validateAWG31(fields); err != nil {
+			return "", err
+		}
 	}
 	if interfaces != 1 || peers != 1 {
 		return "", ErrConfiguration

@@ -48,7 +48,7 @@ type MergeResult struct {
 }
 
 var ErrImport = errors.New("Не удалось разобрать конфигурацию. Проверь формат и параметры подключения.")
-var awgFields = regexp.MustCompile(`(?mi)^\s*(Jc|Jmin|Jmax|S[1-4]|H[1-4]|I[1-5])\s*=`)
+var awgFields = regexp.MustCompile(`(?mi)^\s*(` + protocol.AWGFieldPattern + `)\s*=`)
 
 func newID() string {
 	var b [16]byte

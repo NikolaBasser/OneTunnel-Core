@@ -16,6 +16,11 @@ type TransportOptions = protocol.TransportOptions
 type NetworkOptions = protocol.NetworkOptions
 type DNSOptions = protocol.DNSOptions
 type NetworkRule = protocol.NetworkRule
+type PolicyTarget = protocol.PolicyTarget
+type RuleSet = protocol.RuleSet
+type RouteQuery = protocol.RouteQuery
+type RoutePrediction = protocol.RoutePrediction
+type PolicyAnalysis = protocol.PolicyAnalysis
 type ReliabilityOptions = control.ReliabilityOptions
 type Request = control.Request
 type Response = control.Response
@@ -112,4 +117,11 @@ func CapabilitiesFor(os, architecture string) (Capabilities, error) {
 	}
 	runtime := os == "windows" && architecture == "amd64"
 	return Capabilities{OS: os, Architecture: architecture, PortableAPI: true, RuntimeAvailable: runtime, SystemProtection: runtime}, nil
+}
+
+func AnalyzeNetwork(options *NetworkOptions) (PolicyAnalysis, error) {
+	return protocol.AnalyzeNetwork(options)
+}
+func ExplainRoute(options *NetworkOptions, query RouteQuery) (RoutePrediction, error) {
+	return protocol.ExplainRoute(options, query)
 }

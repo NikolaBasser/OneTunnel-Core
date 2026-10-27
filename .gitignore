@@ -148,3 +148,8 @@
 
 !/internal/platform/https_probe_budget_windows_test.go
 !/internal/platform/reliability_acceptance_safety_windows_test.go
+
+!/internal/protocol/policy_test.go
+!/internal/protocol/awg31_test.go
+!/internal/embeddedawg/awg31_test.go
+!/internal/profiles/policy_preferences_windows_test.go

@@ -51,6 +51,7 @@ type Request struct {
 	Filter           string
 	TransportInput   *TransportInput
 	NetworkInput     *NetworkInput
+	PolicyQuery      *protocol.RouteQuery
 	Password         string
 	RestoreSchedules bool
 	Schedule         *SubscriptionSchedule
@@ -737,6 +738,13 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return nil, nil
 	case "group.results.fastest":
 		return a.groupResultsFastest(r.Token)
+	case "network.analyze":
+		return a.analyzeNetwork(r.ID, nil)
+	case "network.explain":
+		if r.PolicyQuery == nil {
+			return nil, protocol.ErrConfiguration
+		}
+		return a.analyzeNetwork(r.ID, r.PolicyQuery)
 	case "network.preferences.view":
 		return a.networkPreferencesView(r.ID)
 	case "network.preferences.save":

@@ -16,6 +16,8 @@ const (
 )
 
 type NetworkOptions struct {
+	Targets   []PolicyTarget `json:"Targets,omitempty"`
+	RuleSets  []RuleSet      `json:"RuleSets,omitempty"`
 	DNS       *DNSOptions
 	Rules     []NetworkRule
 	Resolvers []DNSOptions `json:"Resolvers,omitempty"`
@@ -32,9 +34,13 @@ type DNSOptions struct {
 }
 
 type NetworkRule struct {
-	Kind   string
-	Value  string
-	Action string
+	Port     string `json:"Port,omitempty"`
+	Network  string `json:"Network,omitempty"`
+	Process  string `json:"Process,omitempty"`
+	Outbound string `json:"Outbound,omitempty"`
+	Kind     string
+	Value    string
+	Action   string
 }
 
 type DNSRule struct {
@@ -46,7 +52,7 @@ type DNSRule struct {
 var windowsProcessPath = regexp.MustCompile(`(?i)^[a-z]:\\`)
 
 func NetworkOptionsEmpty(options *NetworkOptions) bool {
-	return options == nil || options.DNS == nil && len(options.Rules) == 0 && len(options.Resolvers) == 0 && len(options.DNSRules) == 0 && !options.AllowLAN
+	return options == nil || options.DNS == nil && len(options.Rules) == 0 && len(options.Resolvers) == 0 && len(options.DNSRules) == 0 && !options.AllowLAN && len(options.Targets) == 0 && len(options.RuleSets) == 0
 }
 
 // CloneNetworkOptions detaches persisted preferences from the profile slice.
@@ -58,6 +64,11 @@ func CloneNetworkOptions(options *NetworkOptions) *NetworkOptions {
 	if options.DNS != nil {
 		dns := *options.DNS
 		copy.DNS = &dns
+	}
+	copy.Targets = append([]PolicyTarget(nil), options.Targets...)
+	copy.RuleSets = append([]RuleSet(nil), options.RuleSets...)
+	for i := range copy.RuleSets {
+		copy.RuleSets[i].Members = append([]NetworkRule(nil), options.RuleSets[i].Members...)
 	}
 	copy.Rules = append([]NetworkRule(nil), options.Rules...)
 	copy.Resolvers = append([]DNSOptions(nil), options.Resolvers...)
@@ -144,6 +155,22 @@ func NormalizeNetworkOptions(options *NetworkOptions) (*NetworkOptions, error) {
 				}
 				rule.Value = netip.PrefixFrom(address, bits).String()
 			}
+		case "port":
+			p, ok := normalizePort(rule.Value)
+			if !ok {
+				return nil, ErrConfiguration
+			}
+			rule.Value = p
+		case "network":
+			rule.Value = strings.ToLower(rule.Value)
+			if !has(rule.Value, "tcp udp") {
+				return nil, ErrConfiguration
+			}
+		case "rule-set":
+			rule.Value = strings.ToLower(rule.Value)
+			if !policyName.MatchString(rule.Value) {
+				return nil, ErrConfiguration
+			}
 		case "process":
 			path, ok := normalizeProcessPath(rule.Value)
 			if !ok {
@@ -156,6 +183,9 @@ func NormalizeNetworkOptions(options *NetworkOptions) (*NetworkOptions, error) {
 	}
 	if len(out.Rules) == 0 {
 		out.Rules = nil
+	}
+	if err := normalizePolicy(out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -184,6 +214,9 @@ func NetworkOptionsEquivalent(a, b *NetworkOptions) bool {
 		return false
 	}
 	if first.DNS != nil && *first.DNS != *second.DNS {
+		return false
+	}
+	if !reflect.DeepEqual(first.Targets, second.Targets) || !reflect.DeepEqual(first.RuleSets, second.RuleSets) {
 		return false
 	}
 	if first.AllowLAN != second.AllowLAN || !reflect.DeepEqual(first.Resolvers, second.Resolvers) || !reflect.DeepEqual(first.DNSRules, second.DNSRules) {

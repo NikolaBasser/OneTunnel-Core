@@ -72,6 +72,9 @@ func testKeyPair(t testing.TB) (string, string) {
 }
 
 func startPair(t testing.TB, obfuscated bool) (*Transport, *Transport) {
+	return startPairMode(t, obfuscated, false)
+}
+func startPairMode(t testing.TB, obfuscated, awg31 bool) (*Transport, *Transport) {
 	t.Helper()
 	aPriv, aPub := testKeyPair(t)
 	bPriv, bPub := testKeyPair(t)
@@ -89,6 +92,19 @@ func startPair(t testing.TB, obfuscated bool) (*Transport, *Transport) {
 			values["ijc"], values["ijmin"], values["ijmax"] = "1", "1", "3"
 			values["is1"], values["is2"] = "1", "2"
 			values["ih1"], values["ih2"], values["ih3"], values["ih4"] = "11", "12", "13", "14"
+		}
+		if awg31 {
+			values["is1"], values["is2"], values["is3"], values["is4"] = "16", "16", "16", "16"
+			values["ih1"], values["ih2"], values["ih3"], values["ih4"] = "1", "2", "3", "4"
+			values["iheaderprotectionkey"] = base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+			values["icontentpaddingaddition"] = "0-16"
+			values["irekeyaftertime"] = "110-130"
+			values["irekeytimeout"] = "4-6"
+			values["irejectaftertime"] = "170-190"
+			values["ikeepalivetimeout"] = "20-30"
+			values["imaxhandshakeattempts"] = "12-18"
+			values["irandomtrailers"] = "on"
+			values["idisablecookies"] = "off"
 		}
 		return &Plan{Addresses: []netip.Prefix{local}, Routes: []netip.Prefix{netip.MustParsePrefix(peerAddress + "/32")}, MTU: 1280, values: values}
 	}
