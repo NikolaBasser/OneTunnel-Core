@@ -151,7 +151,7 @@ func (r *Runtime) qualityCurrentHealth(ctx context.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		ip, err := secureBootstrapLookup(ctx, host)
+		ip, err := r.secureQualityBootstrap(ctx, host)
 		if err != nil {
 			return nil, err
 		}
@@ -159,4 +159,22 @@ func (r *Runtime) qualityCurrentHealth(ctx context.Context) error {
 	}}
 	defer transport.CloseIdleConnections()
 	return checkHTTPSProbes(ctx, transport, []httpsProbe{{"https://example.com/", 200, "Example Domain"}, {"https://www.gstatic.com/generate_204", 204, ""}, {"https://captive.apple.com/hotspot-detect.html", 200, "<TITLE>Success</TITLE>"}})
+}
+
+func (r *Runtime) secureQualityBootstrap(ctx context.Context, host string) (string, error) {
+	return secureBootstrapLookupWithDial(ctx, host, func(ctx context.Context, network, address string) (net.Conn, error) {
+		ip, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		name, err := r.qualityInterface(ip)
+		if err != nil {
+			return nil, err
+		}
+		dialer, err := interfaceDialer(name)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, address)
+	})
 }

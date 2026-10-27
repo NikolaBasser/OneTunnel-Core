@@ -18,7 +18,7 @@ import (
 func (r *Runtime) probeQuality(ctx context.Context, p control.Profile) (latency time.Duration, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: map[string]string{}, secure: true, forceSecure: true})
+	ctx = context.WithValue(ctx, bootstrapKey{}, &bootstrapResolver{cache: map[string]string{}, secure: true, forceSecure: true, secureLookup: r.secureQualityBootstrap})
 	local, err := freePort()
 	if err != nil {
 		return 0, err

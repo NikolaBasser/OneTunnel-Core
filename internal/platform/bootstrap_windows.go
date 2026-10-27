@@ -71,12 +71,16 @@ func (b *bootstrapResolver) lookup(ctx context.Context, host string) (string, er
 }
 
 func secureBootstrapLookup(ctx context.Context, host string) (string, error) {
+	return secureBootstrapLookupWithDial(ctx, host, nil)
+}
+
+func secureBootstrapLookupWithDial(ctx context.Context, host string, dial func(context.Context, string, string) (net.Conn, error)) (string, error) {
 	ascii, err := idna.Lookup.ToASCII(host)
 	if err != nil || !strings.Contains(ascii, ".") || strings.HasSuffix(ascii, ".local") {
 		return "", errors.New("private endpoint DNS unavailable")
 	}
 	for _, resolver := range []struct{ address, name string }{{"1.1.1.1", "cloudflare-dns.com"}, {"8.8.8.8", "dns.google"}} {
-		transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{ServerName: resolver.name, MinVersion: tls.VersionTLS12}}
+		transport := &http.Transport{Proxy: nil, DialContext: dial, TLSClientConfig: &tls.Config{ServerName: resolver.name, MinVersion: tls.VersionTLS12}}
 		for _, kind := range []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA} {
 			deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
 			address, err := bootstrapQuery(deadline, &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, "https://"+resolver.address+"/dns-query", ascii, kind)

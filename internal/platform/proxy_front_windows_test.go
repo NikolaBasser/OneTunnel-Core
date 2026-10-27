@@ -2,12 +2,28 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"io"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestQualityBootstrapUsesExplicitEncryptedDialer(t *testing.T) {
+	var calls atomic.Int32
+	_, err := secureBootstrapLookupWithDial(context.Background(), "example.com", func(_ context.Context, network, address string) (net.Conn, error) {
+		calls.Add(1)
+		if network != "tcp" || (address != "1.1.1.1:443" && address != "8.8.8.8:443") {
+			t.Errorf("unexpected bootstrap destination: %s %s", network, address)
+		}
+		return nil, errors.New("synthetic bound-dial rejection")
+	})
+	if err == nil || calls.Load() == 0 {
+		t.Fatal("encrypted bootstrap ignored the explicit physical dialer")
+	}
+}
 
 func TestStartCannotReplaceActiveReconnect(t *testing.T) {
 	f := newRetryFixture(t)
