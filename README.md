@@ -6,6 +6,39 @@ The core owns protocol handling, profile import, subscription parsing, configura
 planning and connection coordination. Native adapters own operating-system integration.
 The Windows runtime embeds Xray, sing-box and AmneziaWG in the Go service.
 
+## Current source status — 2026-10-27
+
+Quality selection, proxy chains, multiple WG/AWG peers and advanced DNS/MUX
+controls are merged into `main`. This describes current source, not the older
+published 0.1.0 Windows package or an automatically upgraded installed service.
+The Windows application still selects an exact core revision.
+
+| Area | Verified scope | Remaining limits |
+| --- | --- | --- |
+| DNS and routing | DoH/DoT/DoQ/DoH3, domain resolver rules, FakeIP, bounded/disabled cache; TLS rejection, proxy outage and real-address CIDR checks. DoH3/FakeIP also pass actual OS TUN with IPv4/IPv6. | No blanket certification of every application, DNS channel or provider. |
+| Multiplexing | Shadowsocks/Trojan h2mux/smux/yamux, padding and connection/stream policies; 24 live fixture combinations, concurrent HTTP, UDP and broken-session recovery. VLESS Xray XUDP and UDP443 policies pass. | Server support and valid transport combinations are required. |
+| Proxy chains | Two/three Shadowsocks UDP hops; actual three-hop OS TUN, IPv4/IPv6, 512/4096-byte payloads and each-hop outage/recovery. | Other protocol/topology combinations are not exhaustively tested. |
+| Multiple native peers | Two-peer WG/AWG native/shared OS interfaces, IPv4/IPv6 TCP/UDP, failure isolation, recovery and counters; AWG 3.1 regression. | Up to eight peers can be configured; live acceptance covers two. |
+| Quality selection | Proxy, shared TUN and native WG/AWG; policy-respecting HTTPS measurements, switching and outage recovery. | Measures latency/reachability, not throughput; controlled peers do not certify arbitrary providers. |
+| Windows automation | Genuine interactive login starts and connects the app in proxy mode; actual WPF activation launches the production proxy watchdog and owner loss restores WinINET settings. | Whole-device login autoconnect, physical sleep/Wi-Fi and other launch contexts remain separate. |
+| UDP-TUN startup | One cold start after reboot and 20 repeated start/stop cycles pass; safety-only WFP tracing finds no unfinished calls. | The original isolated timeout has no established cause: [#24](https://github.com/NikolaBasser/OneTunnel-Core/issues/24). |
+| Hardware coverage | Dedicated Windows Server 2025 x64 VM; separate earlier bounded primary-PC LAN acceptance. | Windows ARM64 execution and physical hardware coverage: [#25](https://github.com/NikolaBasser/OneTunnel-Core/issues/25). |
+
+Latest dedicated-VM regression: **323 top-level tests across eight packages**.
+The companion Windows application passed **215 isolated session0 WPF assertions**;
+interactive hotkey blocks were explicitly skipped in that run. New-control visual
+layout and interactive hotkeys are tracked in
+[Windows #26](https://github.com/NikolaBasser/OneTunnel-Windows/issues/26).
+See the [DNS/MUX acceptance record](docs/DNS-MUX-ACCEPTANCE-2026-10-27.txt).
+
+[Core main CI](https://github.com/NikolaBasser/OneTunnel-Core/actions/runs/40531976406)
+and [full Windows pinned-core integration](https://github.com/NikolaBasser/OneTunnel-Windows/actions/runs/40531199702)
+passed. Portable Linux ARM64 CI and standalone recovery cross-compilation do not
+establish a working Windows ARM64 VPN runtime. Test VM recovery left no owned
+test WFP objects, tunnel adapters or recovery tasks; the service was running idle.
+
+## Profile management
+
 The Windows user host manages saved subscriptions with manual refresh, an explicit
 change preview and one-time Apply/Cancel tokens. Preview never writes the profile
 store; intervening changes require a fresh review. Provider-reported usage and
@@ -107,7 +140,7 @@ Proxy profiles can store encrypted DNS and explicit split routing preferences fo
 whole-device mode. Ordered domain, domain-suffix, IP/subnet and executable-path
 rules choose proxy, direct or reject; unmatched traffic stays proxied. Direct rules
 are intentional exceptions to VPN routing, not an automatic LAN bypass. Custom
-DoH/DoT uses a literal resolver IP, verified TLS identity and proxy detour. Upstream
+DoH/DoT/DoQ/DoH3 use literal resolver IPs, verified TLS identity and proxy detours. Upstream
 server-name bootstrap uses the fixed encrypted infrastructure path, separately
 from the custom tunneled resolver. Native AWG/WG with empty preferences retain imported DNS/AllowedIPs;
 nonempty full-device policies use the shared TUN; local mode is rejected. A matching new
@@ -126,7 +159,8 @@ Tray profile selection uses the Go projection and never starts a connection.
 
 Shared-TUN proxy policies support up to eight additional encrypted resolvers and
 64 ordered exact/suffix domain DNS rules. Resolver indices select verified-TLS
-DoH/DoT endpoints routed through the proxy; the default resolver remains final.
+DoH/DoT/DoQ/DoH3 endpoints routed through the proxy; explicit domain rules precede
+optional FakeIP and the default resolver remains final.
 An opt-in LAN exception sends only RFC1918 IPv4 and IPv6 ULA directly after
 explicit user rules. It defaults off, does not exclude OS routes, and never
 removes persistent traffic protection. Connected private subnets on the default
@@ -164,13 +198,16 @@ activation and excludes machine startup ownership.
 Windows acceptance tests exercise real registry APIs and DPAPI under exclusively
 created test keys, including typed restoration, external edits, partial-write
 rollback and loopback-listener loss. They never activate the user's system proxy
-or notify WinINET; actual WinINET switching and detached-watchdog acceptance
-remain separate checks.
+or notify WinINET. Separate dedicated-VM acceptance covers real WinINET
+switching and production detached-watchdog restoration.
 Opt-in dedicated-server acceptance additionally covers real WinINET activation,
 production watcher recovery after listener/owner loss, startup registration and
 Windows network-category transitions. These tests require explicit build tags
 and host guards; they do not run in the default suite. Category-controller tests
-use synthetic session/timing inputs and do not certify Windows logon or sleep.
+use synthetic session/timing inputs. Separate interactive VM acceptance confirms
+actual Windows logon and proxy-only automatic connection plus normal Explorer
+UI-to-watchdog launch. Scheduled-task launching is not established by that result;
+physical sleep and whole-device login autoconnect remain unverified.
 
 Group checks report total check duration separately from successful HTTPS probe
 latency. HTTPS latency excludes engine startup and cleanup and is not ICMP RTT.
