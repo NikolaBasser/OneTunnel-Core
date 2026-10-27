@@ -20,6 +20,7 @@ type PolicyTarget struct {
 	Name     string
 	Protocol int
 	Source   string
+	Via      string `json:"Via,omitempty"`
 }
 type RuleSet struct {
 	Name    string
@@ -80,6 +81,24 @@ func normalizePolicy(options *NetworkOptions) error {
 		targets[t.Name] = true
 		if _, e := targetPlan(*t); e != nil {
 			return e
+		}
+	}
+	via := map[string]string{}
+	for i := range options.Targets {
+		t := &options.Targets[i]
+		t.Via = strings.ToLower(strings.TrimSpace(t.Via))
+		if t.Via != "" && t.Via != "@primary" && !targets[t.Via] {
+			return ErrConfiguration
+		}
+		via[t.Name] = t.Via
+	}
+	for name := range via {
+		seen := map[string]bool{}
+		for current := name; current != "" && current != "@primary"; current = via[current] {
+			if seen[current] {
+				return ErrConfiguration
+			}
+			seen[current] = true
 		}
 	}
 	total := 0
@@ -193,6 +212,12 @@ func appendPolicy(config object, p *Plan, options *NetworkOptions) error {
 			return ErrConfiguration
 		}
 		out["tag"] = policyTag(target.Name)
+		if target.Via != "" {
+			out["detour"] = policyTag(target.Via)
+			if target.Via == "@primary" {
+				out["detour"] = "proxy"
+			}
+		}
 		if target.Protocol == Naive {
 			out["domain_resolver"] = "remote-dns"
 		}

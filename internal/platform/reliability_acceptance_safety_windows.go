@@ -48,13 +48,16 @@ func acceptanceRestored(state control.State, profile, previousSession string) bo
 }
 
 type acceptanceGateway struct {
-	mu          sync.Mutex
-	listener    net.Listener
-	server      *http.Server
-	address     string
-	sockets     map[net.Conn]bool
-	connections int
-	delay       time.Duration
+	mu           sync.Mutex
+	listener     net.Listener
+	server       *http.Server
+	address      string
+	sockets      map[net.Conn]bool
+	connections  int
+	delay        time.Duration
+	allowConnect func(string) bool
+	dialConnect  func(context.Context, string) (net.Conn, error)
+	destinations map[string]int
 }
 
 func newAcceptanceGateway() (*acceptanceGateway, error) {
@@ -99,13 +102,16 @@ func (g *acceptanceGateway) stop() {
 }
 func (g *acceptanceGateway) count() int { g.mu.Lock(); defer g.mu.Unlock(); return g.connections }
 func (g *acceptanceGateway) serve(generation net.Listener, w http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodConnect || !acceptanceConnectTarget(request.Host) {
+	g.mu.Lock()
+	allow, dial, delay := g.allowConnect, g.dialConnect, g.delay
+	g.mu.Unlock()
+	if allow == nil {
+		allow = acceptanceConnectTarget
+	}
+	if request.Method != http.MethodConnect || !allow(request.Host) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	g.mu.Lock()
-	delay := g.delay
-	g.mu.Unlock()
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -114,7 +120,12 @@ func (g *acceptanceGateway) serve(generation net.Listener, w http.ResponseWriter
 		}
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
-	upstream, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", request.Host)
+	if dial == nil {
+		dial = func(ctx context.Context, address string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)
+		}
+	}
+	upstream, err := dial(ctx, request.Host)
 	cancel()
 	if err != nil {
 		http.Error(w, "unavailable", http.StatusBadGateway)
@@ -134,6 +145,9 @@ func (g *acceptanceGateway) serve(generation net.Listener, w http.ResponseWriter
 	}
 	g.sockets[client], g.sockets[upstream] = true, true
 	g.connections++
+	if g.destinations != nil {
+		g.destinations[request.Host]++
+	}
 	g.mu.Unlock()
 	defer func() {
 		_ = client.Close()

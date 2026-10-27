@@ -19,6 +19,42 @@ type sharedNativeHealthFixture struct {
 	closes                 int
 }
 
+func TestNativePeerUplinkChecksEveryEndpoint(t *testing.T) {
+	endpoints := []string{"192.0.2.1:51820", "[2001:db8::2]:51820"}
+	for _, second := range []string{"Ethernet", "Other", "OneTunnel0123", ""} {
+		seen := 0
+		uplink, err := sharedNativePeerUplink(endpoints, func(ip string) (string, error) {
+			seen++
+			if ip == "192.0.2.1" {
+				return "Ethernet", nil
+			}
+			if ip != "2001:db8::2" {
+				t.Fatal("wrong endpoint", ip)
+			}
+			return second, nil
+		}, func(name string) (*net.Interface, error) {
+			index := 6
+			if name == "Other" {
+				index = 7
+			}
+			return &net.Interface{Name: name, Index: index}, nil
+		})
+		if seen != 2 {
+			t.Fatal("peer route not checked")
+		}
+		if second == "Ethernet" {
+			if err != nil || uplink.Index != 6 {
+				t.Fatal(err)
+			}
+		} else if err == nil {
+			t.Fatal("unsafe peer uplink accepted", second)
+		}
+	}
+	if _, err := sharedNativePeerUplink(nil, nil, nil); err == nil {
+		t.Fatal("empty peers accepted")
+	}
+}
+
 func (f *sharedNativeHealthFixture) Close() error                { f.closes++; return nil }
 func (f *sharedNativeHealthFixture) Done() <-chan struct{}       { return f.engineDone }
 func (f *sharedNativeHealthFixture) NativeDone() <-chan struct{} { return f.nativeDone }

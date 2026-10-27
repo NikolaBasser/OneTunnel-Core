@@ -11,6 +11,15 @@ import (
 )
 
 func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
+	advanced, e := (NetworkInput{Mode: "h3", ServerIP: "1.1.1.1", ServerName: "dns.example", FakeIP: true, CacheMode: "bounded", CacheCapacity: "512", ResolversText: "quic | 8.8.8.8 | dns.example | |"}).Parse()
+	if e != nil || !advanced.FakeIP || advanced.DNSCache == nil || advanced.DNSCache.Capacity != 512 || advanced.DNS.Path != "/dns-query" || advanced.Resolvers[0].Port != 853 {
+		t.Fatal("advanced DNS preferences lost", e)
+	}
+	for _, input := range []NetworkInput{{Mode: "default", CacheMode: "bounded", CacheCapacity: "invalid"}, {Mode: "default", CacheMode: "default", CacheCapacity: "512"}, {Mode: "default", CacheMode: "unknown"}} {
+		if _, e := input.Parse(); e == nil {
+			t.Fatal("invalid cache input accepted")
+		}
+	}
 	parsed, err := (NetworkInput{Mode: "https", ServerIP: "1.1.1.1", ServerName: "DNS.Example", RulesText: "domain-suffix | direct | example.com\ncidr | reject | 192.0.2.4", ResolversText: "https | 8.8.8.8 | dns.google |  |\ntls | 2001:4860:4860::8888 | dns.google | 853 |", DNSRulesText: "domain | example.com | 2\ndomain-suffix | sub.example.com | 1", AllowLAN: true}).Parse()
 	if err != nil || parsed.DNS.Port != 443 || parsed.DNS.Path != "/dns-query" || parsed.Rules[1].Value != "192.0.2.4/32" {
 		t.Fatalf("parse/defaults: %+v %v", parsed, err)
@@ -61,7 +70,7 @@ func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
 	if err := json.Unmarshal(viewJSON, &viewObject); err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "ResolversText", "DNSRulesText", "AllowLAN", "Supported", "CanSave")
+	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "ResolversText", "DNSRulesText", "AllowLAN", "Supported", "CanSave", "FakeIP", "CacheMode", "CacheCapacity")
 	if view.ResolversText != "https | 1.1.1.1 | dns.example | 443 | /dns-query\n" || view.DNSRulesText != "domain-suffix | example.com | 1\n" || !view.AllowLAN {
 		t.Fatalf("DNS preferences view: %+v", view)
 	}
@@ -129,5 +138,30 @@ func TestEditorSavePreservesExistingNetworkPreferences(t *testing.T) {
 	doc, err := store.Load()
 	if err != nil || len(doc.Profiles) != 1 || !protocol.NetworkOptionsEquivalent(doc.Profiles[0].Network, profile.Network) {
 		t.Fatalf("editor lost network preferences: %+v %v", doc, err)
+	}
+}
+
+func TestAdvancedMuxEditorPreservesDNSPreferences(t *testing.T) {
+	profile := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Mux", "Manual")
+	profile.Protocol = 5
+	profile.Source = "ss://chacha20-ietf-poly1305:fixture@127.0.0.1:18080"
+	profile.Network = &protocol.NetworkOptions{FakeIP: true, DNS: &protocol.DNSOptions{Transport: "h3", ServerIP: "1.1.1.1", ServerName: "dns.example"}, DNSCache: &protocol.DNSCacheOptions{Capacity: 512}}
+	store := managementStore(t, Document{Profiles: []Profile{profile}})
+	app := &Application{Store: store}
+	input := &TransportInput{FragmentLength: "100-200", FragmentInterval: "10-20", NoiseLength: "50-150", NoiseDelay: "10-20", Mux: true, MuxConcurrency: "8", MuxProtocol: "yamux", MuxMaxConnections: "2", MuxMinStreams: "1", MuxPadding: true}
+	if _, err := app.SaveEditor(context.Background(), Request{ID: profile.ID, Name: profile.Name, Group: profile.Group, Source: profile.Source, TransportInput: input}); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := document.Profiles[0]
+	if saved.Transport == nil || saved.Transport.MuxProtocol != "yamux" || saved.Transport.MuxMaxConnections != 2 || saved.Transport.MuxMinStreams != 1 || !saved.Transport.MuxPadding || !protocol.NetworkOptionsEquivalent(saved.Network, profile.Network) {
+		t.Fatal("advanced transport/DNS preferences lost")
+	}
+	view, err := app.networkPreferencesView(profile.ID)
+	if err != nil || !view.FakeIP || view.CacheMode != "bounded" || view.CacheCapacity != "512" || view.Mode != "h3" {
+		t.Fatal("advanced network metadata lost", err)
 	}
 }

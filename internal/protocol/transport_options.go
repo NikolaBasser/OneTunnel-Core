@@ -11,14 +11,20 @@ import (
 // TransportOptions is a bounded, profile-local preference, never an imported
 // executable, arbitrary outbound chain, or a replacement routing policy.
 type TransportOptions struct {
-	Fragment         bool
-	FragmentLength   string
-	FragmentInterval string
-	Noise            bool
-	NoiseLength      string
-	NoiseDelay       string
-	Mux              bool
-	MuxConcurrency   int
+	Fragment          bool
+	FragmentLength    string
+	FragmentInterval  string
+	Noise             bool
+	NoiseLength       string
+	NoiseDelay        string
+	Mux               bool
+	MuxConcurrency    int
+	MuxProtocol       string `json:"MuxProtocol,omitempty"`
+	MuxMaxConnections int    `json:"MuxMaxConnections,omitempty"`
+	MuxMinStreams     int    `json:"MuxMinStreams,omitempty"`
+	MuxPadding        bool   `json:"MuxPadding,omitempty"`
+	XUDPConcurrency   int    `json:"XUDPConcurrency,omitempty"`
+	UDP443Policy      string `json:"UDP443Policy,omitempty"`
 }
 
 func boundedRange(value string, min, max int) bool {
@@ -44,12 +50,31 @@ func ValidateOptions(source string, kind int, o *TransportOptions) error {
 	if o == nil {
 		return nil
 	}
+	if !has(o.MuxProtocol, " xray h2mux smux yamux") || o.MuxMaxConnections < 0 || o.MuxMaxConnections > 32 || o.MuxMinStreams < 0 || o.MuxMinStreams > 128 || o.XUDPConcurrency < 0 || o.XUDPConcurrency > 128 || !has(o.UDP443Policy, " skip reject allow") {
+		return ErrConfiguration
+	}
 	if !boundedRange(o.FragmentLength, 1, 1400) || !boundedRange(o.FragmentInterval, 0, 100) ||
 		!boundedRange(o.NoiseLength, 1, 1400) || !boundedRange(o.NoiseDelay, 0, 100) || o.MuxConcurrency < 1 || o.MuxConcurrency > 128 {
 		return ErrConfiguration
 	}
 	if !o.Fragment && !o.Noise && !o.Mux {
 		return nil
+	}
+	if o.Mux && o.MuxProtocol != "" && o.MuxProtocol != "xray" {
+		if o.MuxMaxConnections == 0 && o.MuxMinStreams != 0 {
+			return ErrConfiguration
+		}
+		if o.Fragment || o.Noise || kind != 5 && kind != Trojan || o.XUDPConcurrency != 0 || o.UDP443Policy != "" {
+			return ErrConfiguration
+		}
+		plan, err := Compile(source, kind, false, 18001, 18002, "")
+		if err != nil || plan.NeedsXray {
+			return ErrConfiguration
+		}
+		return nil
+	}
+	if o.Mux && (o.MuxMaxConnections != 0 || o.MuxMinStreams != 0 || o.MuxPadding) {
+		return ErrConfiguration
 	}
 	if kind != 2 && kind != 4 {
 		return ErrConfiguration
@@ -89,13 +114,36 @@ func CompileWithOptions(source string, kind int, tun bool, localPort, bridgePort
 	if err != nil || options == nil || (!options.Fragment && !options.Noise && !options.Mux) {
 		return p, err
 	}
+	if options.Mux && !p.NeedsXray {
+		config, e := decodeObject(p.Proxy)
+		if e != nil {
+			return Plan{}, ErrConfiguration
+		}
+		mux := object{"enabled": true, "protocol": options.MuxProtocol, "padding": options.MuxPadding}
+		if options.MuxMaxConnections > 0 {
+			mux["max_connections"] = options.MuxMaxConnections
+		} else {
+			mux["max_streams"] = options.MuxConcurrency
+		}
+		if options.MuxMinStreams > 0 {
+			mux["min_streams"] = options.MuxMinStreams
+		}
+		one(config["outbounds"])["multiplex"] = mux
+		b, e := json.Marshal(config)
+		p.Proxy = string(b)
+		return p, e
+	}
 	x, err := decodeObject(p.Xray)
 	if err != nil {
 		return Plan{}, ErrConfiguration
 	}
 	out := one(x["outbounds"])
 	if options.Mux {
-		out["mux"] = object{"enabled": true, "concurrency": options.MuxConcurrency, "xudpConcurrency": 0, "xudpProxyUDP443": "skip"}
+		policy := options.UDP443Policy
+		if policy == "" {
+			policy = "skip"
+		}
+		out["mux"] = object{"enabled": true, "concurrency": options.MuxConcurrency, "xudpConcurrency": options.XUDPConcurrency, "xudpProxyUDP443": policy}
 	}
 	if options.Fragment || options.Noise {
 		stream := obj(out["streamSettings"])
@@ -131,6 +179,17 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 	normalized, err := NormalizeNetworkOptions(network)
 	if err != nil {
 		return Plan{}, err
+	}
+	if kind == HTTP || kind == Naive {
+		resolvers := append([]DNSOptions(nil), normalized.Resolvers...)
+		if normalized.DNS != nil {
+			resolvers = append(resolvers, *normalized.DNS)
+		}
+		for _, resolver := range resolvers {
+			if resolver.Transport == "quic" || resolver.Transport == "h3" {
+				return Plan{}, fmt.Errorf("%w: DNS_transport_requires_UDP_capable_profile", ErrConfiguration)
+			}
+		}
 	}
 	var p Plan
 	if kind < 2 {
@@ -179,6 +238,20 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 		}
 		config["dns"] = dns
 	}
+	if normalized.DNSCache != nil || normalized.FakeIP {
+		dns := obj(config["dns"])
+		if normalized.DNSCache != nil {
+			dns["disable_cache"] = normalized.DNSCache.Disabled
+			dns["cache_capacity"] = normalized.DNSCache.Capacity
+		}
+		if normalized.FakeIP {
+			dns["servers"] = append(arr(dns["servers"]), object{"type": "fakeip", "tag": "onetunnel-fakeip", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/112"})
+			dns["rules"] = append(arr(dns["rules"]), object{"query_type": []any{"A", "AAAA"}, "action": "route", "server": "onetunnel-fakeip"})
+			// Internal endpoint/domain lookups must use the real resolver, not FakeIP.
+			obj(config["route"])["default_domain_resolver"] = "remote-dns"
+		}
+		config["dns"] = dns
+	}
 	route := obj(obj(config["route"]))
 	rules := arr(route["rules"])
 	// Windows process paths are case-insensitive; the engine's exact path
@@ -194,7 +267,17 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 			entry["process_path_regex"] = patterns
 		}
 	}
+	resolvedFakeIP := false
+	resolveForIPRules := func() {
+		if normalized.FakeIP && !resolvedFakeIP {
+			rules = append(rules, object{"action": "resolve", "server": "remote-dns"})
+			resolvedFakeIP = true
+		}
+	}
 	for _, rule := range normalized.Rules {
+		if rule.Kind == "cidr" || rule.Kind == "rule-set" {
+			resolveForIPRules()
+		}
 		entry := matcher(rule)
 		if rule.Action == "reject" {
 			entry["action"] = "reject"
@@ -207,6 +290,7 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 		rules = append(rules, entry)
 	}
 	if normalized.AllowLAN {
+		resolveForIPRules()
 		rules = append(rules, object{"ip_cidr": []any{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}, "action": "route", "outbound": "direct"})
 	}
 	if len(normalized.Rules) > 0 || normalized.AllowLAN {
@@ -236,7 +320,7 @@ func CompileWithNetwork(source string, kind int, tun bool, localPort, bridgePort
 
 func dnsServer(dns DNSOptions, tag string) object {
 	server := object{"type": dns.Transport, "tag": tag, "server": dns.ServerIP, "server_port": dns.Port, "detour": "proxy", "tls": object{"enabled": true, "server_name": dns.ServerName}}
-	if dns.Transport == "https" {
+	if dns.Transport == "https" || dns.Transport == "h3" {
 		server["path"] = dns.Path
 	}
 	return server

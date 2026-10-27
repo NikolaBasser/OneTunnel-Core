@@ -29,7 +29,7 @@ func prepareQualityConfig(config jsonObject, route func(string) (string, error))
 			continue
 		}
 		// A direct or alternate policy path cannot qualify the primary server.
-		if out := jString(rule["outbound"]); out != "" && out != "proxy" {
+		if out := jString(rule["outbound"]); out != "" && !qualityUsesPrimary(config, out) {
 			delete(rule, "outbound")
 			rule["action"] = "reject"
 		}
@@ -39,6 +39,9 @@ func prepareQualityConfig(config jsonObject, route func(string) (string, error))
 	config["route"] = routing
 	for _, raw := range jArray(config["outbounds"]) {
 		out := jObject(raw)
+		if jString(out["detour"]) != "" {
+			continue
+		}
 		ip := net.ParseIP(jString(out["server"]))
 		if ip == nil || ip.IsLoopback() {
 			continue
@@ -50,4 +53,24 @@ func prepareQualityConfig(config jsonObject, route func(string) (string, error))
 		out["bind_interface"] = name
 	}
 	return nil
+}
+
+func qualityUsesPrimary(config jsonObject, tag string) bool {
+	seen := map[string]bool{}
+	for tag != "" && !seen[tag] {
+		if tag == "proxy" {
+			return true
+		}
+		seen[tag] = true
+		next := ""
+		for _, raw := range jArray(config["outbounds"]) {
+			out := jObject(raw)
+			if jString(out["tag"]) == tag {
+				next = jString(out["detour"])
+				break
+			}
+		}
+		tag = next
+	}
+	return false
 }

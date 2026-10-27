@@ -16,13 +16,20 @@ const (
 )
 
 type NetworkOptions struct {
-	Targets   []PolicyTarget `json:"Targets,omitempty"`
-	RuleSets  []RuleSet      `json:"RuleSets,omitempty"`
+	FakeIP    bool             `json:"FakeIP,omitempty"`
+	DNSCache  *DNSCacheOptions `json:"DNSCache,omitempty"`
+	Targets   []PolicyTarget   `json:"Targets,omitempty"`
+	RuleSets  []RuleSet        `json:"RuleSets,omitempty"`
 	DNS       *DNSOptions
 	Rules     []NetworkRule
 	Resolvers []DNSOptions `json:"Resolvers,omitempty"`
 	DNSRules  []DNSRule    `json:"DNSRules,omitempty"`
 	AllowLAN  bool         `json:"AllowLAN,omitempty"`
+}
+
+type DNSCacheOptions struct {
+	Disabled bool
+	Capacity int
 }
 
 type DNSOptions struct {
@@ -52,7 +59,7 @@ type DNSRule struct {
 var windowsProcessPath = regexp.MustCompile(`(?i)^[a-z]:\\`)
 
 func NetworkOptionsEmpty(options *NetworkOptions) bool {
-	return options == nil || options.DNS == nil && len(options.Rules) == 0 && len(options.Resolvers) == 0 && len(options.DNSRules) == 0 && !options.AllowLAN && len(options.Targets) == 0 && len(options.RuleSets) == 0
+	return options == nil || options.DNS == nil && options.DNSCache == nil && !options.FakeIP && len(options.Rules) == 0 && len(options.Resolvers) == 0 && len(options.DNSRules) == 0 && !options.AllowLAN && len(options.Targets) == 0 && len(options.RuleSets) == 0
 }
 
 // CloneNetworkOptions detaches persisted preferences from the profile slice.
@@ -61,6 +68,10 @@ func CloneNetworkOptions(options *NetworkOptions) *NetworkOptions {
 		return nil
 	}
 	copy := *options
+	if options.DNSCache != nil {
+		cache := *options.DNSCache
+		copy.DNSCache = &cache
+	}
 	if options.DNS != nil {
 		dns := *options.DNS
 		copy.DNS = &dns
@@ -81,6 +92,14 @@ func NormalizeNetworkOptions(options *NetworkOptions) (*NetworkOptions, error) {
 		return nil, nil
 	}
 	out := CloneNetworkOptions(options)
+	if out.DNSCache != nil {
+		if out.DNSCache.Capacity == 0 {
+			out.DNSCache.Capacity = 4096
+		}
+		if out.DNSCache.Capacity < 128 || out.DNSCache.Capacity > 65536 {
+			return nil, ErrConfiguration
+		}
+	}
 	if out.DNS != nil {
 		dns, ok := normalizeDNSOptions(*out.DNS)
 		if !ok {
@@ -219,7 +238,7 @@ func NetworkOptionsEquivalent(a, b *NetworkOptions) bool {
 	if !reflect.DeepEqual(first.Targets, second.Targets) || !reflect.DeepEqual(first.RuleSets, second.RuleSets) {
 		return false
 	}
-	if first.AllowLAN != second.AllowLAN || !reflect.DeepEqual(first.Resolvers, second.Resolvers) || !reflect.DeepEqual(first.DNSRules, second.DNSRules) {
+	if first.FakeIP != second.FakeIP || !reflect.DeepEqual(first.DNSCache, second.DNSCache) || first.AllowLAN != second.AllowLAN || !reflect.DeepEqual(first.Resolvers, second.Resolvers) || !reflect.DeepEqual(first.DNSRules, second.DNSRules) {
 		return false
 	}
 	for i := range first.Rules {
@@ -232,7 +251,7 @@ func NetworkOptionsEquivalent(a, b *NetworkOptions) bool {
 
 func normalizeDNSOptions(dns DNSOptions) (DNSOptions, bool) {
 	dns.Transport = strings.ToLower(strings.TrimSpace(dns.Transport))
-	if dns.Transport != "https" && dns.Transport != "tls" {
+	if dns.Transport != "https" && dns.Transport != "tls" && dns.Transport != "quic" && dns.Transport != "h3" {
 		return DNSOptions{}, false
 	}
 	ipText := strings.TrimSpace(dns.ServerIP)
@@ -247,7 +266,7 @@ func normalizeDNSOptions(dns DNSOptions) (DNSOptions, bool) {
 	}
 	dns.ServerName = serverName
 	if dns.Port == 0 {
-		if dns.Transport == "https" {
+		if dns.Transport == "https" || dns.Transport == "h3" {
 			dns.Port = 443
 		} else {
 			dns.Port = 853
@@ -256,7 +275,7 @@ func normalizeDNSOptions(dns DNSOptions) (DNSOptions, bool) {
 	if dns.Port < 1 || dns.Port > 65535 {
 		return DNSOptions{}, false
 	}
-	if dns.Transport == "https" {
+	if dns.Transport == "https" || dns.Transport == "h3" {
 		if dns.Path == "" {
 			dns.Path = "/dns-query"
 		}

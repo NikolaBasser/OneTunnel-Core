@@ -23,6 +23,7 @@ import (
 	boxservice "github.com/sagernet/sing-box/adapter/service"
 	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/dns/transport"
+	"github.com/sagernet/sing-box/dns/transport/fakeip"
 	"github.com/sagernet/sing-box/dns/transport/local"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/anytls"
@@ -110,6 +111,8 @@ func start(data []byte, wholeDevice bool, native NativeTransport) (*Engine, erro
 	transport.RegisterTCP(dnsRegistry)
 	transport.RegisterHTTPS(dnsRegistry)
 	transport.RegisterTLS(dnsRegistry)
+	registerQUICDNS(dnsRegistry)
+	fakeip.RegisterTransport(dnsRegistry)
 	local.RegisterTransport(dnsRegistry)
 	ctx, cancel := context.WithCancel(box.Context(context.Background(), in, out, endpoint.NewRegistry(), dnsRegistry, boxservice.NewRegistry(), certificate.NewRegistry()))
 	ctx = service.ContextWithDefaultRegistry(ctx)
@@ -261,6 +264,8 @@ func validate(data []byte, native NativeTransport) error {
 	dnsRegistry := dns.NewTransportRegistry()
 	transport.RegisterHTTPS(dnsRegistry)
 	transport.RegisterTLS(dnsRegistry)
+	registerQUICDNS(dnsRegistry)
+	fakeip.RegisterTransport(dnsRegistry)
 	transport.RegisterUDP(dnsRegistry)
 	local.RegisterTransport(dnsRegistry)
 	ctx, cancel := context.WithCancel(box.Context(context.Background(), in, out, endpoint.NewRegistry(), dnsRegistry, boxservice.NewRegistry(), certificate.NewRegistry()))

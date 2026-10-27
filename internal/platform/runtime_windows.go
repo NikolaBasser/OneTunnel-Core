@@ -833,7 +833,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 				if err != nil {
 					return err
 				}
-				if request.FullDevice {
+				if request.FullDevice && jString(out["detour"]) == "" {
 					name, e := routeInterface(jString(out["server"]))
 					if e != nil {
 						return e

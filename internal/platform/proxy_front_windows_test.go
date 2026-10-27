@@ -125,3 +125,14 @@ func TestQualityConfigHasNoOSIngressOrDirectProof(t *testing.T) {
 		t.Fatal("bypass could qualify primary quality")
 	}
 }
+
+func TestQualityChainBindsOnlyPhysicalEntry(t *testing.T) {
+	c := jsonObject{"inbounds": []any{jsonObject{"type": "mixed"}}, "route": jsonObject{"rules": []any{jsonObject{"action": "route", "outbound": "onetunnel-target-exit"}}}, "outbounds": []any{jsonObject{"tag": "proxy", "server": "203.0.113.1"}, jsonObject{"tag": "onetunnel-target-middle", "server": "203.0.113.2", "detour": "proxy"}, jsonObject{"tag": "onetunnel-target-exit", "server": "203.0.113.3", "detour": "onetunnel-target-middle"}}}
+	bindings := 0
+	if err := prepareQualityConfig(c, func(string) (string, error) { bindings++; return "Ethernet", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if bindings != 1 || jString(jObject(jArray(jObject(c["route"])["rules"])[0])["action"]) != "route" {
+		t.Fatal("chain did not retain its primary path or bound an inner hop")
+	}
+}

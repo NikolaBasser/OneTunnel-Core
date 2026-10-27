@@ -288,3 +288,73 @@ Quality probes never create OS adapters or alter routes. They retain configured 
 and policy, bind outer transports to physical interfaces, and reject bypass paths
 as proof of primary-server quality. Native probes use separate userspace peers;
 reusing the active peer identity is prohibited to prevent WireGuard roaming.
+
+Proxy policy targets support `Via` for bounded chains. An omitted value retains
+an independent outbound. `"Via":"@primary"` sends that target through the selected
+profile; a target name sends it through that named target. At most eight targets
+are allowed; missing links, self-links and cycles are rejected before engine
+startup. For example, this routes TCP through entry -> middle -> exit:
+
+```json
+{"Targets":[{"Name":"middle","Protocol":3,"Source":"socks5://middle.example:1080","Via":"@primary"},{"Name":"exit","Protocol":6,"Source":"http://exit.example:8080","Via":"middle"}],"Rules":[{"Kind":"network","Value":"tcp","Action":"proxy","Outbound":"exit"}]}
+```
+
+DNS keeps its existing configured resolver path through the primary profile;
+this example does not change DNS to the exit. Each hop must support the requested
+transport; HTTP chains provide TCP, and UDP requires UDP-capable hops throughout.
+Additional hops use the existing engine-native target scope; standalone Xray or
+native OS-tunnel targets are still rejected. Chain failure never substitutes an
+independent direct transport. Quality probes can measure a policy chain only
+when its transport dependency actually reaches the selected primary profile.
+
+Native WG/AWG profiles accept up to eight peers. Each peer retains its own
+endpoint, key, keepalive and AllowedIPs; duplicate public keys or identical
+network prefixes are rejected. Nested prefixes use the engine's longest-prefix
+selection. Full-device multi-peer profiles must explicitly provide IPv4 and,
+when the interface has IPv6, IPv6 default routes plus DNS. Defaults are never
+silently assigned to every peer. Single-peer full-device expansion is unchanged.
+All peer endpoints must resolve and use the same physical uplink before startup;
+multiple simultaneous physical uplinks are not supported. Diagnostic quality
+probes reject an identity shared with any active peer to prevent roaming.
+
+Dedicated Windows VM acceptance covers two- and three-hop Shadowsocks UDP
+chains through compiled proxy ingress/routing policy, IPv4/IPv6 destinations,
+each hop's outage and recovery. Three-hop UDP also passes through the actual
+shared OS TUN, including 4096-byte payloads. Two-peer WG/AWG acceptance covers
+native and shared OS interfaces, IPv4/IPv6 TCP/UDP, peer outage/recovery,
+failure isolation and counters. AWG 3.1 additionally has a repeated userspace
+multi-peer regression. Native interface wrappers expose aggregate encrypted
+transport counters to the runtime; shared-TUN counters retain payload scope.
+The eight-peer configuration limit is not an eight-peer live acceptance result.
+One initial UDP-TUN startup reached the independent 80-second recovery deadline;
+A later cold start after VM reboot and 20 repeated starts passed. WFP tracing in safety builds found no incomplete calls (26.5 ms maximum on the cold start, 59.3 ms across ten traced cycles). Ten additional cycles passed without tracing. The initial delay remains unexplained; these results are not a confirmed root-cause fix.
+
+Profile DNS supports HTTPS, TLS, QUIC (`quic`) and HTTP/3 (`h3`). QUIC uses
+port 853 by default; HTTP/3 uses port 443 and the same validated path format
+as HTTPS. All resolvers retain the proxy detour and TLS name verification.
+DoQ/DoH3 require a UDP-capable primary; HTTP/Naive primaries are rejected.
+Optional `DNSCache` accepts `Disabled` and `Capacity` (128–65536, default 4096).
+Omitting it retains the engine's previous defaults; no stale/never-expire cache
+or disk persistence is enabled.
+
+Optional `FakeIP` applies to A/AAAA queries in shared full-device TUN mode.
+Explicit domain resolver rules retain precedence; other query types still reach
+the real resolver. Mappings are memory-only and reset when the engine stops.
+The router restores domains and resolves real addresses before IP/rule-set/LAN
+matching so synthetic addresses cannot bypass IP reject rules. Internal endpoint
+lookups use `remote-dns` explicitly rather than the FakeIP transport.
+
+Transport settings retain legacy VLESS Xray MUX and add XUDP concurrency plus
+UDP443 policy (`skip`, `allow`, `reject`; default remains `skip`). Shadowsocks
+and Trojan support `h2mux`, `smux` and `yamux`, optional padding, a connection
+count policy or a stream-count policy. With a positive connection count, the
+stream limit is inactive and minimum streams controls connection reuse; with
+zero connections, the stream limit applies and minimum streams must be zero.
+Unsupported protocol/transport combinations are rejected before startup.
+
+Dedicated VM tests cover encrypted DNS, cache hits/disable, TLS rejection,
+proxy outage, FakeIP domain/IP rule preservation, multiplex stream sharing,
+UDP payloads, broken-session recovery and all three XUDP UDP443 policies.
+DoH3 and FakeIP additionally pass through the actual OS TUN. Startup tracing
+is available only in explicitly tagged safety builds; production WFP policy
+and permitted processes are unchanged.
