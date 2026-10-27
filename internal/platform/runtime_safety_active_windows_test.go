@@ -22,6 +22,18 @@ func TestActiveSafetySessionRejectsUnownedOperations(t *testing.T) {
 	if err := check(session); err != nil {
 		t.Fatal(err)
 	}
+	native := session
+	native.Kind = "AmneziaWG"
+	native.EmbeddedNative = true
+	native.ConfigPath = filepath.Join(root, "runtime", native.TunnelName+".conf")
+	native.Engine = filepath.Join(directory, "engines", "amneziawg.exe")
+	if err := check(native); err != nil {
+		t.Fatal("owned embedded native recovery rejected", err)
+	}
+	native.Pid = 1
+	if check(native) == nil {
+		t.Fatal("external native process accepted")
+	}
 	for _, edit := range []func(*Session){
 		func(s *Session) { s.Kind = "AmneziaWG" }, func(s *Session) { s.FullDevice = false }, func(s *Session) { s.EmbeddedNative = true },
 		func(s *Session) { s.Pid = 123 }, func(s *Session) { s.XrayPid = 123 }, func(s *Session) { s.Started = 123 },

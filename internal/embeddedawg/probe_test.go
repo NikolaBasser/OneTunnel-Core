@@ -11,6 +11,18 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 )
 
+func TestSamePeerRejectsDiagnosticRoaming(t *testing.T) {
+	a := &Plan{values: map[string]string{"iprivatekey": "a", "ppublickey": "b", "pendpoint": "127.0.0.1:1"}}
+	b := &Plan{values: map[string]string{"iprivatekey": "a", "ppublickey": "b", "pendpoint": "127.0.0.1:2"}}
+	if !a.SamePeer(b) {
+		t.Fatal("endpoint change hid same peer identity")
+	}
+	b.values["ppublickey"] = "c"
+	if a.SamePeer(b) || a.SamePeer(nil) {
+		t.Fatal("different peer identity rejected")
+	}
+}
+
 func TestProbeDNSAddressPreservesRoutesFamiliesAndSource(t *testing.T) {
 	for _, tc := range []struct{ dns, routes, address, want string }{
 		{"10.77.0.2", "10.77.0.2/32", "10.77.0.1/32", "10.77.0.2"},

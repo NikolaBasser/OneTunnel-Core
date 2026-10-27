@@ -154,3 +154,8 @@
 !/internal/protocol/awg31_test.go
 !/internal/embeddedawg/awg31_test.go
 !/internal/profiles/policy_preferences_windows_test.go
+
+!/internal/platform/quality_windows_test.go
+!/internal/control/quality_test.go
+!/internal/platform/quality_acceptance_safety_windows_test.go
+!/internal/platform/proxy_front_windows_test.go

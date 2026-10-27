@@ -554,7 +554,8 @@ func (a *Application) tickUserSettings(ctx context.Context) (UserSettingsTick, e
 		status := a.desktopCall(ctx, "status", nil, false)
 		s := status.Response.State
 		address := net.JoinHostPort("127.0.0.1", strconv.Itoa(s.LocalPort))
-		if !status.Available || status.Response.Error != nil || !s.Active || s.Reconnecting || s.NeedsRecovery || s.FullDeviceMode || s.WholeDevice || address != u.proxyAddress {
+		stableRetry := s.ProxyListenerStable && s.Reconnecting && address == u.proxyAddress
+		if !status.Available || status.Response.Error != nil || ((!s.Active || s.Reconnecting || s.NeedsRecovery) && !stableRetry) || s.FullDeviceMode || s.WholeDevice || address != u.proxyAddress {
 			if err := a.releaseUserProxy(); err != nil {
 				return UserSettingsTick{}, errUserSettings
 			}

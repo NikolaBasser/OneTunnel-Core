@@ -41,7 +41,7 @@ func acceptanceConnectTarget(address string) bool {
 	if err != nil || port != "443" {
 		return false
 	}
-	return host == "example.com" || host == "www.gstatic.com" || host == "captive.apple.com"
+	return host == "example.com" || host == "www.gstatic.com" || host == "captive.apple.com" || host == "1.1.1.1"
 }
 func acceptanceRestored(state control.State, profile, previousSession string) bool {
 	return statisticsActive(state) && !state.Reconnecting && state.ReconnectAttempt == 0 && !state.TrafficLocked && !state.WholeDevice && state.ProfileID != nil && *state.ProfileID == profile && state.Statistics != nil && state.Statistics.SessionID != "" && state.Statistics.SessionID != previousSession && state.LocalPort > 0
@@ -54,6 +54,7 @@ type acceptanceGateway struct {
 	address     string
 	sockets     map[net.Conn]bool
 	connections int
+	delay       time.Duration
 }
 
 func newAcceptanceGateway() (*acceptanceGateway, error) {
@@ -101,6 +102,16 @@ func (g *acceptanceGateway) serve(generation net.Listener, w http.ResponseWriter
 	if request.Method != http.MethodConnect || !acceptanceConnectTarget(request.Host) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+	g.mu.Lock()
+	delay := g.delay
+	g.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-request.Context().Done():
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	upstream, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", request.Host)

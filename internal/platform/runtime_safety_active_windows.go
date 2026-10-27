@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// OpenSafetyActiveRuntime only recovers the synthetic embedded proxy case. The
+// OpenSafetyActiveRuntime recovers synthetic embedded proxy/native cases. The
 // idle canary's stricter factory remains unchanged.
 func OpenSafetyActiveRuntime(directory, owner, root string, update func(control.State)) (*Runtime, error) {
 	programData, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0)
@@ -101,11 +101,16 @@ func validateActiveSafetySession(data []byte, root, directory string) error {
 	if err := decodeActiveSafetyJSON(data, &session); err != nil {
 		return err
 	}
-	if session.Kind != "proxy" || !session.FullDevice || session.EmbeddedNative || session.Pid != 0 || session.Started != 0 || session.XrayPid != 0 || session.XrayStarted != 0 || !tunnelNamePattern.MatchString(session.TunnelName) {
+	native := session.Kind == "AmneziaWG" && session.EmbeddedNative
+	if (session.Kind != "proxy" && !native) || !session.FullDevice || (session.Kind == "proxy" && session.EmbeddedNative) || session.Pid != 0 || session.Started != 0 || session.XrayPid != 0 || session.XrayStarted != 0 || !tunnelNamePattern.MatchString(session.TunnelName) {
 		return errors.New("session is not a synthetic embedded proxy")
 	}
-	expectedConfig := filepath.Join(root, "runtime", session.TunnelName+".json")
-	if !strings.EqualFold(filepath.Clean(session.ConfigPath), expectedConfig) || !strings.EqualFold(filepath.Clean(session.Engine), filepath.Join(directory, "engines", "sing-box.exe")) {
+	extension, engine := ".json", "sing-box.exe"
+	if native {
+		extension, engine = ".conf", "amneziawg.exe"
+	}
+	expectedConfig := filepath.Join(root, "runtime", session.TunnelName+extension)
+	if !strings.EqualFold(filepath.Clean(session.ConfigPath), expectedConfig) || !strings.EqualFold(filepath.Clean(session.Engine), filepath.Join(directory, "engines", engine)) {
 		return errors.New("active safety session paths mismatch")
 	}
 	return nil

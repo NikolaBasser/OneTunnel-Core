@@ -22,6 +22,11 @@ type Plan struct {
 	values        map[string]string
 }
 
+// SamePeer prevents a diagnostic transport from roaming an active peer's key.
+func (p *Plan) SamePeer(other *Plan) bool {
+	return p != nil && other != nil && p.values["iprivatekey"] == other.values["iprivatekey"] && p.values["ppublickey"] == other.values["ppublickey"]
+}
+
 func Parse(source string, kind int, full bool) (*Plan, error) {
 	if kind != 0 && kind != 1 {
 		return nil, protocol.ErrConfiguration

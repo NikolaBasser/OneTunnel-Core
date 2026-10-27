@@ -47,6 +47,9 @@ type child struct {
 	started int64
 }
 type Runtime struct {
+	front                *proxyFront
+	backendPort          int
+	qualityUplink        map[bool]string
 	forceSecureBootstrap bool
 	bootstrapIPs         map[string]string
 	retry                retryState
@@ -247,19 +250,38 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 	case "hello", "status":
 		r.poll()
 	case "start":
+		if r.retrying {
+			e = errors.New("stop the active reconnect before starting another connection")
+			break
+		}
 		r.bootstrapIPs = map[string]string{}
 		e = r.start(ctx, request)
 		if e == nil {
-			r.activateStatistics()
+			if qualityEligible(*request.Profile, request.FullDevice) && !request.FullDevice && request.Profile.Protocol >= 2 {
+				r.front, e = newProxyFront()
+				if e == nil {
+					r.stateMu.Lock()
+					r.state.LocalPort = r.front.port()
+					r.state.ProxyListenerStable = true
+					r.stateMu.Unlock()
+				}
+			}
+			if e != nil {
+				_ = r.disconnect(ctx)
+				break
+			}
+			r.activateConnection()
 			r.armRetry(request)
 		}
 	case "check-profile":
 		result, e = r.checkProfile(ctx, request.Profile)
 	case "stop":
+		r.closeFront()
 		r.retry = retryState{}
 		r.retrying = false
 		e = r.recover(ctx)
 	case "recover":
+		r.closeFront()
 		r.retry = retryState{}
 		r.retrying = false
 		e = r.recover(ctx)
@@ -394,6 +416,7 @@ func (r *Runtime) Close() {
 	defer r.operations.Unlock()
 	// Service shutdown releases in-process sockets, just as closing the job
 	// releases child engines. Keep the journal and WFP state for recovery.
+	r.closeFront()
 	r.publish("")
 	if r.embeddedNative != nil {
 		_ = r.embeddedNative.Close()
@@ -564,6 +587,9 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		return protocol.ErrConfiguration
 	}
 	p := request.Profile
+	if qualityEligible(*p, request.FullDevice) {
+		r.captureQualityUplinks()
+	}
 	if err = protocol.CheckEngineCompatibility(p.Source, p.Protocol); err != nil {
 		return err
 	}
@@ -637,7 +663,11 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	r.state.WholeDevice = request.FullDevice || native
 	r.state.FullDeviceMode = request.FullDevice
 	r.state.ClockSynchronized = false
+	r.backendPort = local
 	r.state.LocalPort = local
+	if r.front != nil {
+		r.state.LocalPort = r.front.port()
+	}
 	id := p.ID
 	r.state.ProfileID = &id
 	r.stateMu.Unlock()
@@ -1035,6 +1065,9 @@ func stopChild(ctx context.Context, c *child, pid int, started int64, path strin
 }
 func (r *Runtime) disconnect(ctx context.Context) error { return r.disconnectMode(ctx, false) }
 func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
+	if r.front != nil {
+		r.front.setBackend(0)
+	}
 	flush := r.lock.needed()
 	if r.session != nil {
 		s := r.session
@@ -1122,7 +1155,11 @@ func (r *Runtime) disconnectMode(ctx context.Context, retainLock bool) error {
 	}
 	r.transportFailed = false
 	r.stateMu.Lock()
+	r.backendPort = 0
 	r.state.LocalPort = 0
+	if r.front != nil {
+		r.state.LocalPort = r.front.port()
+	}
 	if !retainLock {
 		r.state.ProfileID = nil
 	}

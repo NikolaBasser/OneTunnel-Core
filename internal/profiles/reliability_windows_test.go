@@ -22,20 +22,20 @@ func TestReliabilityPersistMergeAndGroupCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Group = "fixture group"
-	p.Reliability = &control.ReliabilityOptions{AutoReconnect: true, UseFallbacks: true}
+	p.Reliability = &control.ReliabilityOptions{AutoReconnect: true, UseFallbacks: true, AutoSelect: true}
 	doc.Profiles = []Profile{p}
 	if err = store.Save(doc); err != nil {
 		t.Fatal(err)
 	}
 	doc, err = store.Load()
-	if err != nil || !doc.Profiles[0].Reliability.UseFallbacks {
+	if err != nil || !doc.Profiles[0].Reliability.UseFallbacks || !doc.Profiles[0].Reliability.AutoSelect {
 		t.Fatal("policy lost", err)
 	}
 	fresh := p
 	fresh.ID = "22222222-2222-4222-8222-222222222222"
 	fresh.Reliability = nil
 	merged, err := Merge(doc.Profiles, []Profile{fresh}, p.Group)
-	if err != nil || !merged.Profiles[0].Reliability.AutoReconnect {
+	if err != nil || !merged.Profiles[0].Reliability.AutoReconnect || !merged.Profiles[0].Reliability.AutoSelect {
 		t.Fatal("refresh lost policy", err)
 	}
 	called := 0

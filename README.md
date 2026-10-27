@@ -264,3 +264,27 @@ this history. Configuration changes reset that profile's history; cancelled or
 stale batches add nothing. `group.results.clear` with `ClearQuality: true` clears
 both results and history. This is a measurement foundation; it does not perform
 background probing, automatic quality selection or active-session switching.
+
+Profiles can opt into service-owned proxy quality selection with
+`Reliability.AutoSelect`, together with `AutoReconnect` and `UseFallbacks`.
+The selected server starts immediately. Every twenty seconds the service checks
+its HTTPS health and one compatible backup with an isolated proxy engine.
+Only the last three successful HTTPS timings (within ten minutes) qualify;
+selection uses their median, a minimum improvement of 25% and 50 ms, two winning
+measurements and a two-minute minimum hold. Switching uses the existing bounded
+retry path and verifies HTTPS before promotion. Failures invalidate quality
+history, and ordinary outage fallback remains available. Stop cancels probes.
+Up to eight backups are visited in order; larger groups take longer to qualify.
+
+Quality selection supports proxy, full-device TUN and WG/AWG, preserving saved
+DNS/routing policy. It measures HTTPS latency and reachability, not throughput.
+A switch creates a new connection/statistics session. Proxy-only quality sessions
+keep a stable loopback frontend until explicit stop or terminal failure, so an
+existing explicit system-proxy lease survives reconnects. The frontend has no
+direct fallback and closes old flows before replacing a backend.
+The manual group-check history is separate from service quality decisions.
+
+Quality probes never create OS adapters or alter routes. They retain configured DNS
+and policy, bind outer transports to physical interfaces, and reject bypass paths
+as proof of primary-server quality. Native probes use separate userspace peers;
+reusing the active peer identity is prohibited to prevent WireGuard roaming.

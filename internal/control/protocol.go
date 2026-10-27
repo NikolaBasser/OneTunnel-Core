@@ -40,18 +40,19 @@ type Request struct {
 	FullDevice bool      `json:"FullDevice"`
 }
 type State struct {
-	Reconnecting      bool                  `json:"Reconnecting,omitempty"`
-	ReconnectAttempt  int                   `json:"ReconnectAttempt,omitempty"`
-	Active            bool                  `json:"Active"`
-	NeedsRecovery     bool                  `json:"NeedsRecovery"`
-	TrafficLocked     bool                  `json:"TrafficLocked"`
-	WholeDevice       bool                  `json:"WholeDevice"`
-	FullDeviceMode    bool                  `json:"FullDeviceMode"`
-	ClockSynchronized bool                  `json:"ClockSynchronized"`
-	LocalPort         int                   `json:"LocalPort"`
-	Status            string                `json:"Status"`
-	ProfileID         *string               `json:"ProfileId"`
-	Statistics        *ConnectionStatistics `json:"Statistics,omitempty"`
+	ProxyListenerStable bool                  `json:"ProxyListenerStable,omitempty"`
+	Reconnecting        bool                  `json:"Reconnecting,omitempty"`
+	ReconnectAttempt    int                   `json:"ReconnectAttempt,omitempty"`
+	Active              bool                  `json:"Active"`
+	NeedsRecovery       bool                  `json:"NeedsRecovery"`
+	TrafficLocked       bool                  `json:"TrafficLocked"`
+	WholeDevice         bool                  `json:"WholeDevice"`
+	FullDeviceMode      bool                  `json:"FullDeviceMode"`
+	ClockSynchronized   bool                  `json:"ClockSynchronized"`
+	LocalPort           int                   `json:"LocalPort"`
+	Status              string                `json:"Status"`
+	ProfileID           *string               `json:"ProfileId"`
+	Statistics          *ConnectionStatistics `json:"Statistics,omitempty"`
 }
 type Response struct {
 	Revision  uint64     `json:"Revision,omitempty"`
@@ -91,6 +92,9 @@ func Validate(r Request) string {
 			return "invalid_configuration"
 		}
 		if p.Reliability != nil && p.Reliability.UseFallbacks && !p.Reliability.AutoReconnect {
+			return "invalid_configuration"
+		}
+		if p.Reliability != nil && p.Reliability.AutoSelect && (!p.Reliability.AutoReconnect || !p.Reliability.UseFallbacks) {
 			return "invalid_configuration"
 		}
 		policyMode := r.FullDevice || r.Command == "check-profile"
