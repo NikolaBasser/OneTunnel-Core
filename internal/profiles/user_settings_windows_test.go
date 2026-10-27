@@ -159,6 +159,28 @@ func TestUserAutomationDebouncePermissionAndManualInhibition(t *testing.T) {
 		t.Fatal("explicit off/on did not re-enable automation")
 	}
 }
+
+func TestUserAutomationReportsExistingConnectionWithoutStartingAgain(t *testing.T) {
+	a, _, _, now, _ := automationFixture(t)
+	saveAutomation(t, a, UserPreferences{AutoConnect: true, ProfileID: "11111111-1111-4111-8111-111111111111", AllowPublic: true})
+	_, _ = a.tickUserSettings(context.Background())
+	*now = now.Add(6 * time.Second)
+	calls := 0
+	a.ServiceCall = func(_ context.Context, request control.Request) (control.Response, int64, error) {
+		calls++
+		if request.Command != "status" {
+			t.Fatalf("active connection triggered %s", request.Command)
+		}
+		return control.Response{Version: 1, Instance: "synthetic-instance", Revision: uint64(calls), State: control.State{Active: true, LocalPort: 11080}}, 1, nil
+	}
+	result, err := a.tickUserSettings(context.Background())
+	if err != nil || calls != 1 || !strings.Contains(result.View.Message, "already active") || result.Connection == nil || !result.Connection.Response.State.Active {
+		t.Fatalf("existing connection misreported: %+v, calls=%d, error=%v", result, calls, err)
+	}
+	if a.UserAutomation.attempts != 0 {
+		t.Fatal("existing connection consumed an automatic connection attempt")
+	}
+}
 func TestUserAutomationNeverRecoversUnavailableOrProtectedService(t *testing.T) {
 	for _, state := range []control.State{{Active: true}, {Reconnecting: true}, {TrafficLocked: true}, {NeedsRecovery: true}} {
 		t.Run(state.Status, func(t *testing.T) {

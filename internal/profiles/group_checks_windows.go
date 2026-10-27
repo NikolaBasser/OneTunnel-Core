@@ -10,6 +10,8 @@ import (
 )
 
 type GroupCheckRow struct {
+	qualityKey               [32]byte
+	qualityAt                time.Time
 	ID, Name, Message        string
 	Success, NetworkTest     bool
 	Milliseconds             int64
@@ -68,11 +70,18 @@ func (a *Application) checkGroup(ctx context.Context, group string) (GroupCheckR
 			check.DNSLatencyMilliseconds = nil
 		}
 		result.Rows = append(result.Rows, GroupCheckRow{ID: p.ID, Name: p.Name, Success: check.Success, NetworkTest: check.NetworkTest, Milliseconds: check.Milliseconds, Message: check.Message, HTTPSLatencyMilliseconds: check.HTTPSLatencyMilliseconds, DNSLatencyMilliseconds: check.DNSLatencyMilliseconds})
+		result.Rows[len(result.Rows)-1].qualityKey = groupQualityKey(p)
+		result.Rows[len(result.Rows)-1].qualityAt = a.now()
 	}
 	if err := ctx.Err(); err != nil {
 		return GroupCheckResult{}, errors.New("Проверка прервана: служба недоступна или подключение занято")
 	}
 	rows := cloneGroupCheckRows(result.Rows)
+	if _, err := a.Store.Load(); err == nil && a.Store.revision == revision {
+		for _, row := range rows {
+			a.recordGroupQuality(row, a.now())
+		}
+	}
 	a.groupResults = &completedGroupResults{result: GroupCheckResult{Group: result.Group, CheckedAt: result.CheckedAt, Rows: rows}, revision: revision, token: newID()}
 	return result, nil
 }

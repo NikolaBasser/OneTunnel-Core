@@ -594,6 +594,9 @@ func (a *Application) tickUserSettings(ctx context.Context) (UserSettingsTick, e
 	// Authenticate state immediately before normal connection.start; never auto-recover.
 	status := a.desktopCall(ctx, "status", nil, false)
 	s := status.Response.State
+	if status.Available && status.Response.Error == nil && s.Active && !s.Reconnecting && !s.NeedsRecovery && !s.TrafficLocked {
+		return done("A connection is already active; automatic connection is not needed.", &status)
+	}
 	if !status.Available || status.Response.Error != nil || s.Active || s.Reconnecting || s.NeedsRecovery || s.TrafficLocked || !a.refreshAllowed() {
 		return done("The service is not confirmed idle.", &status)
 	}

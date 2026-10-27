@@ -254,3 +254,13 @@ AmneziaWG imports preserve AWG 3.1 header protection, content-padding ranges,
 handshake/rekey/keepalive ranges, random trailers and cookie settings through the
 embedded device UAPI. Nonzero header keys require all four packet padding sizes
 to be at least twelve bytes. WireGuard rejects these AWG-only fields.
+
+Completed proxy group checks retain an in-memory quality history for the current
+profile-host session: up to eight checks per profile within thirty minutes, capped
+at 256 profiles. The result view reports successful checks and measured HTTPS
+median/minimum/maximum latency separately from total check duration. Native DNS,
+configuration-only and successful checks without an HTTPS timing do not enter
+this history. Configuration changes reset that profile's history; cancelled or
+stale batches add nothing. `group.results.clear` with `ClearQuality: true` clears
+both results and history. This is a measurement foundation; it does not perform
+background probing, automatic quality selection or active-session switching.

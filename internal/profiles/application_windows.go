@@ -49,6 +49,7 @@ type Request struct {
 	FavoritesOnly    bool
 	Sort             string
 	Filter           string
+	ClearQuality     bool
 	TransportInput   *TransportInput
 	NetworkInput     *NetworkInput
 	PolicyQuery      *protocol.RouteQuery
@@ -93,6 +94,7 @@ type Application struct {
 	desktopRetired  map[string]bool
 	pendingPreview  *pendingSubscriptionPreview
 	groupResults    *completedGroupResults
+	groupQuality    map[string]groupQualitySeries
 	Now             func() time.Time
 	scheduleNext    map[string]scheduledSubscriptionDue
 	scheduleLastNow time.Time
@@ -735,6 +737,9 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.groupResultsView(r.Sort, r.Filter)
 	case "group.results.clear":
 		a.groupResults = nil
+		if r.ClearQuality {
+			a.groupQuality = nil
+		}
 		return nil, nil
 	case "group.results.fastest":
 		return a.groupResultsFastest(r.Token)

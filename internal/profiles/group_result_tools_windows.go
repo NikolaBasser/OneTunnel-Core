@@ -19,6 +19,7 @@ type GroupResultDisplayRow struct {
 	HTTPSLatencyMilliseconds *int64 `json:",omitempty"`
 	DNSLatencyMilliseconds   *int64 `json:",omitempty"`
 	TimingLabel              string
+	Quality                  *GroupQualitySummary `json:",omitempty"`
 }
 
 type GroupResultsView struct {
@@ -102,9 +103,13 @@ func (a *Application) groupResultsView(sortMode, filter string) (GroupResultsVie
 				label += fmt.Sprintf(" · %d ms DNS exchange latency (may include initial handshake; not public internet access)", *row.DNSLatencyMilliseconds)
 			}
 		}
+		quality := a.groupQualitySummary(row, a.now())
+		if quality != nil {
+			label += " · " + quality.Label
+		}
 		view.Rows = append(view.Rows, GroupResultDisplayRow{
 			ID: row.ID, Name: row.Name, Message: row.Message, Success: row.Success,
-			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label, HTTPSLatencyMilliseconds: row.HTTPSLatencyMilliseconds, DNSLatencyMilliseconds: row.DNSLatencyMilliseconds,
+			NetworkTest: row.NetworkTest, Milliseconds: row.Milliseconds, TimingLabel: label, HTTPSLatencyMilliseconds: row.HTTPSLatencyMilliseconds, DNSLatencyMilliseconds: row.DNSLatencyMilliseconds, Quality: quality,
 		})
 	}
 	view.Stale = a.Store == nil
