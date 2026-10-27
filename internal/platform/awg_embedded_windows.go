@@ -4,9 +4,8 @@ package platform
 
 import (
 	"context"
-	"errors"
-	"net"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/embeddedawg"
+	"net"
 )
 
 func embeddedAWGEnabled() bool { return true }
@@ -15,27 +14,26 @@ func startEmbeddedAWG(ctx context.Context, source string, kind int, full bool, n
 	if err != nil {
 		return nil, err
 	}
-	host, port, err := net.SplitHostPort(plan.Endpoint())
-	if err != nil {
+	if err = resolveNativePlanEndpoints(ctx, plan); err != nil {
 		return nil, err
 	}
-	address, err := resolveEndpoint(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	if err = plan.SetEndpoint(net.JoinHostPort(address, port)); err != nil {
-		return nil, err
-	}
-	adapter, err := routeInterface(address)
-	if err != nil {
-		return nil, err
-	}
-	if len(adapter) >= 9 && adapter[:9] == "OneTunnel" {
-		return nil, errors.New("physical AWG uplink unavailable")
-	}
-	uplink, err := net.InterfaceByName(adapter)
+	uplink, err := sharedNativePeerUplink(plan.Endpoints(), routeInterface, net.InterfaceByName)
 	if err != nil {
 		return nil, err
 	}
 	return embeddedawg.StartNative(ctx, plan, name, uint32(uplink.Index))
+}
+
+func resolveNativePlanEndpoints(ctx context.Context, plan *embeddedawg.Plan) error {
+	return plan.ResolveEndpoints(func(endpoint string) (string, error) {
+		host, port, err := net.SplitHostPort(endpoint)
+		if err != nil {
+			return "", err
+		}
+		address, err := resolveEndpoint(ctx, host)
+		if err != nil {
+			return "", err
+		}
+		return net.JoinHostPort(address, port), nil
+	})
 }

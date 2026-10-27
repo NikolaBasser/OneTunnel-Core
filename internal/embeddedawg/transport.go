@@ -50,10 +50,12 @@ func StartTransport(plan *Plan, bind conn.Bind, pin func(conn.Bind) error) (_ *T
 		_ = bind.Close()
 		return nil, errors.New("AWG transport MTU is invalid")
 	}
-	endpoint, err := netip.ParseAddrPort(plan.Endpoint())
-	if err != nil || !endpoint.IsValid() || endpoint.Port() == 0 || endpoint.Addr().IsUnspecified() || endpoint.Addr().Zone() != "" {
-		_ = bind.Close()
-		return nil, errors.New("AWG endpoint must be a resolved literal IP")
+	for _, value := range plan.Endpoints() {
+		endpoint, err := netip.ParseAddrPort(value)
+		if err != nil || !endpoint.IsValid() || endpoint.Port() == 0 || endpoint.Addr().IsUnspecified() || endpoint.Addr().Zone() != "" {
+			_ = bind.Close()
+			return nil, errors.New("AWG endpoint must be a resolved literal IP")
+		}
 	}
 	addresses := make([]netip.Addr, 0, len(plan.Addresses))
 	families := map[bool]bool{}

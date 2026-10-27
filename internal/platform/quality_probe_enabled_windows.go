@@ -118,15 +118,7 @@ func (r *Runtime) probeQuality(ctx context.Context, p control.Profile) (latency 
 				return 0, errors.New("quality probe cannot reuse active native peer identity")
 			}
 		}
-		host, port, e := net.SplitHostPort(plan.Endpoint())
-		if e != nil {
-			return 0, e
-		}
-		address, e := resolveEndpoint(ctx, host)
-		if e != nil {
-			return 0, e
-		}
-		if e = plan.SetEndpoint(net.JoinHostPort(address, port)); e != nil {
+		if e := resolveNativePlanEndpoints(ctx, plan); e != nil {
 			return 0, e
 		}
 		plan.UseEphemeralListenPort()

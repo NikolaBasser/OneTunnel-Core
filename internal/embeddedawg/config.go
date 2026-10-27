@@ -20,11 +20,22 @@ type Plan struct {
 	SearchDomains []string
 	MTU           int
 	values        map[string]string
+	peers         []map[string]string
 }
 
 // SamePeer prevents a diagnostic transport from roaming an active peer's key.
 func (p *Plan) SamePeer(other *Plan) bool {
-	return p != nil && other != nil && p.values["iprivatekey"] == other.values["iprivatekey"] && p.values["ppublickey"] == other.values["ppublickey"]
+	if p == nil || other == nil || p.values["iprivatekey"] != other.values["iprivatekey"] {
+		return false
+	}
+	for _, a := range p.peerValues() {
+		for _, b := range other.peerValues() {
+			if a["ppublickey"] == b["ppublickey"] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func Parse(source string, kind int, full bool) (*Plan, error) {
@@ -48,6 +59,7 @@ func Parse(source string, kind int, full bool) (*Plan, error) {
 		}
 		if strings.EqualFold(line, "[Peer]") {
 			section = "p"
+			p.peers = append(p.peers, map[string]string{})
 			continue
 		}
 		pair := strings.SplitN(line, "=", 2)
@@ -55,18 +67,29 @@ func Parse(source string, kind int, full bool) (*Plan, error) {
 			return nil, protocol.ErrConfiguration
 		}
 		key, value := strings.ToLower(strings.TrimSpace(pair[0])), strings.TrimSpace(pair[1])
-		p.values[section+key] = value
+		if section == "p" {
+			p.peers[len(p.peers)-1][section+key] = value
+		} else {
+			p.values[section+key] = value
+		}
 	}
-	for _, entry := range []struct {
-		key    string
-		target *[]netip.Prefix
-	}{{"iaddress", &p.Addresses}, {"pallowedips", &p.Routes}} {
-		for _, raw := range strings.Split(p.values[entry.key], ",") {
+	for key, value := range p.peers[0] {
+		p.values[key] = value
+	}
+	for _, raw := range strings.Split(p.values["iaddress"], ",") {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, protocol.ErrConfiguration
+		}
+		p.Addresses = append(p.Addresses, prefix)
+	}
+	for _, peer := range p.peers {
+		for _, raw := range strings.Split(peer["pallowedips"], ",") {
 			prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
 			if err != nil {
 				return nil, protocol.ErrConfiguration
 			}
-			*entry.target = append(*entry.target, prefix)
+			p.Routes = append(p.Routes, prefix)
 		}
 	}
 	if mtu := p.values["imtu"]; mtu != "" {
@@ -97,29 +120,66 @@ func Parse(source string, kind int, full bool) (*Plan, error) {
 }
 
 func (p *Plan) Endpoint() string { return p.values["pendpoint"] }
+func (p *Plan) peerValues() []map[string]string {
+	if len(p.peers) == 0 {
+		return []map[string]string{p.values}
+	}
+	return p.peers
+}
+func (p *Plan) Endpoints() []string {
+	result := []string{}
+	for _, peer := range p.peerValues() {
+		result = append(result, peer["pendpoint"])
+	}
+	return result
+}
+func (p *Plan) ResolveEndpoints(resolve func(string) (string, error)) error {
+	resolved := []string{}
+	for _, endpoint := range p.Endpoints() {
+		value, err := resolve(endpoint)
+		if err != nil {
+			return err
+		}
+		if _, err = netip.ParseAddrPort(value); err != nil {
+			return errors.New("AWG endpoint must be resolved")
+		}
+		resolved = append(resolved, value)
+	}
+	for i, peer := range p.peerValues() {
+		peer["pendpoint"] = resolved[i]
+	}
+	p.values["pendpoint"] = resolved[0]
+	return nil
+}
 func (p *Plan) SetEndpoint(value string) error {
+	if len(p.peerValues()) != 1 {
+		return errors.New("multiple AWG endpoints require ResolveEndpoints")
+	}
 	if _, err := netip.ParseAddrPort(value); err != nil {
 		return errors.New("AWG endpoint must be resolved")
 	}
 	p.values["pendpoint"] = value
+	p.peerValues()[0]["pendpoint"] = value
 	return nil
 }
 
 func (p *Plan) UAPI() ([]byte, error) {
-	if _, err := netip.ParseAddrPort(p.Endpoint()); err != nil {
-		return nil, errors.New("AWG endpoint must be resolved")
+	for _, endpoint := range p.Endpoints() {
+		if _, err := netip.ParseAddrPort(endpoint); err != nil {
+			return nil, errors.New("AWG endpoint must be resolved")
+		}
 	}
 	var b strings.Builder
 	write := func(key, value string) { b.WriteString(key); b.WriteByte('='); b.WriteString(value); b.WriteByte('\n') }
-	key := func(field string) (string, error) {
-		raw, err := base64.StdEncoding.DecodeString(p.values[field])
+	key := func(value string) (string, error) {
+		raw, err := base64.StdEncoding.DecodeString(value)
 		if err != nil || len(raw) != 32 {
 			return "", protocol.ErrConfiguration
 		}
 		defer clear(raw)
 		return hex.EncodeToString(raw), nil
 	}
-	private, err := key("iprivatekey")
+	private, err := key(p.values["iprivatekey"])
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +198,7 @@ func (p *Plan) UAPI() ([]byte, error) {
 		}
 	}
 	if p.values["iheaderprotectionkey"] != "" {
-		value, err := key("iheaderprotectionkey")
+		value, err := key(p.values["iheaderprotectionkey"])
 		if err != nil {
 			return nil, err
 		}
@@ -150,25 +210,38 @@ func (p *Plan) UAPI() ([]byte, error) {
 		}
 	}
 	write("replace_peers", "true")
-	public, err := key("ppublickey")
-	if err != nil {
-		return nil, err
-	}
-	write("public_key", public)
-	if p.values["ppresharedkey"] != "" {
-		v, err := key("ppresharedkey")
+	for _, peer := range p.peerValues() {
+		public, err := key(peer["ppublickey"])
 		if err != nil {
 			return nil, err
 		}
-		write("preshared_key", v)
-	}
-	write("endpoint", p.Endpoint())
-	write("replace_allowed_ips", "true")
-	for _, prefix := range p.Routes {
-		write("allowed_ip", prefix.Masked().String())
-	}
-	if interval := p.values["ppersistentkeepalive"]; interval != "" {
-		write("persistent_keepalive_interval", interval)
+		write("public_key", public)
+		if peer["ppresharedkey"] != "" {
+			v, err := key(peer["ppresharedkey"])
+			if err != nil {
+				return nil, err
+			}
+			write("preshared_key", v)
+		}
+		write("endpoint", peer["pendpoint"])
+		write("replace_allowed_ips", "true")
+		routes := p.Routes
+		if len(p.peers) > 0 {
+			routes = nil
+			for _, raw := range strings.Split(peer["pallowedips"], ",") {
+				prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+				if err != nil {
+					return nil, err
+				}
+				routes = append(routes, prefix)
+			}
+		}
+		for _, prefix := range routes {
+			write("allowed_ip", prefix.Masked().String())
+		}
+		if interval := peer["ppersistentkeepalive"]; interval != "" {
+			write("persistent_keepalive_interval", interval)
+		}
 	}
 	return []byte(b.String()), nil
 }

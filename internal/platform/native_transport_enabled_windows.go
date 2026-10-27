@@ -13,7 +13,7 @@ func startNativeUserspaceTransport(plan *embeddedawg.Plan) (*embeddedawg.Transpo
 	return startNativeUserspaceTransportWithRoute(plan, routeInterface)
 }
 func startNativeUserspaceTransportWithRoute(plan *embeddedawg.Plan, route func(string) (string, error)) (*embeddedawg.Transport, error) {
-	uplink, err := sharedNativePhysicalInterface(plan.Endpoint(), route, net.InterfaceByName)
+	uplink, err := sharedNativePeerUplink(plan.Endpoints(), route, net.InterfaceByName)
 	if err != nil {
 		return nil, err
 	}

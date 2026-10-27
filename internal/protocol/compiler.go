@@ -606,6 +606,87 @@ func proxyConfig(outbound object, tun bool, localPort int, xrayPath string, need
 	return config
 }
 func tunnel(source string, kind int, full bool) (string, error) {
+	// A single peer retains the historical full-device route expansion. Multiple
+	// peers must carry explicit defaults: expanding every peer changes ownership.
+	lines := strings.Split(source, "\n")
+	starts := []int{}
+	for i, raw := range lines {
+		if strings.EqualFold(strings.TrimSpace(strings.SplitN(raw, "#", 2)[0]), "[Peer]") {
+			starts = append(starts, i)
+		}
+	}
+	if len(starts) <= 1 {
+		return singleTunnel(source, kind, full)
+	}
+	if len(starts) > 8 {
+		return "", ErrConfiguration
+	}
+	common := strings.Join(lines[:starts[0]], "\n") + "\n"
+	keys, routes := map[string]bool{}, map[string]bool{}
+	defaults := map[string]bool{}
+	for i, start := range starts {
+		end := len(lines)
+		if i+1 < len(starts) {
+			end = starts[i+1]
+		}
+		block := strings.Join(lines[start:end], "\n")
+		if _, err := singleTunnel(common+block, kind, false); err != nil {
+			return "", err
+		}
+		for _, raw := range lines[start:end] {
+			pair := strings.SplitN(strings.TrimSpace(strings.SplitN(raw, "#", 2)[0]), "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(pair[0])) {
+			case "publickey":
+				decoded, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(pair[1]))
+				key := string(decoded)
+				if keys[key] {
+					return "", ErrConfiguration
+				}
+				keys[key] = true
+			case "allowedips":
+				for _, raw := range strings.Split(pair[1], ",") {
+					_, prefix, err := net.ParseCIDR(strings.TrimSpace(raw))
+					if err != nil {
+						return "", ErrConfiguration
+					}
+					route := prefix.String()
+					if routes[route] {
+						return "", ErrConfiguration
+					}
+					routes[route] = true
+					defaults[route] = true
+				}
+			}
+		}
+	}
+	if full {
+		if !defaults["0.0.0.0/0"] {
+			return "", ErrConfiguration
+		}
+		hasDNS, ipv6 := false, false
+		for _, raw := range lines[:starts[0]] {
+			pair := strings.SplitN(strings.TrimSpace(strings.SplitN(raw, "#", 2)[0]), "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(pair[0])) {
+			case "dns":
+				hasDNS = strings.TrimSpace(pair[1]) != ""
+			case "address":
+				ipv6 = strings.Contains(pair[1], ":")
+			}
+		}
+		if !hasDNS || ipv6 && !defaults["::/0"] {
+			return "", ErrConfiguration
+		}
+	}
+	return source, nil
+}
+
+func singleTunnel(source string, kind int, full bool) (string, error) {
 	section := ""
 	interfaces, peers := 0, 0
 	fields := map[string]string{}

@@ -161,3 +161,5 @@
 !/internal/platform/proxy_front_windows_test.go
 !/internal/protocol/chain_test.go
 !/internal/platform/chain_acceptance_safety_windows_test.go
+!/internal/embeddedsingbox/chain_udp_fixture_test.go
+!/internal/embeddedawg/multipeer_test.go

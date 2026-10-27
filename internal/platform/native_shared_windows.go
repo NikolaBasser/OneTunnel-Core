@@ -49,6 +49,24 @@ func sharedNativePhysicalInterface(endpoint string, route func(string) (string, 
 	return uplink, nil
 }
 
+func sharedNativePeerUplink(endpoints []string, route func(string) (string, error), lookup func(string) (*net.Interface, error)) (*net.Interface, error) {
+	var uplink *net.Interface
+	for _, endpoint := range endpoints {
+		candidate, err := sharedNativePhysicalInterface(endpoint, route, lookup)
+		if err != nil {
+			return nil, err
+		}
+		if uplink != nil && candidate.Index != uplink.Index {
+			return nil, errors.New("native peers require the same physical uplink")
+		}
+		uplink = candidate
+	}
+	if uplink == nil {
+		return nil, errors.New("native peers are required")
+	}
+	return uplink, nil
+}
+
 func sharedNativeAdapterIndices(name string, list []*windows.IpAdapterAddresses) (uint32, uint32, error) {
 	for _, adapter := range list {
 		if windows.UTF16PtrToString(adapter.FriendlyName) == name {

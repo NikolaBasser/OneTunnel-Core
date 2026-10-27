@@ -5,7 +5,6 @@ package platform
 import (
 	"context"
 	"errors"
-	"net"
 	"time"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/embeddedawg"
@@ -27,16 +26,8 @@ func nativeGroupDNSProbe(ctx context.Context, source string, kind int) (bool, *i
 		resolver.secureLookup = inherited.secureLookup
 	}
 	ctx = context.WithValue(ctx, bootstrapKey{}, resolver)
-	host, port, err := net.SplitHostPort(plan.Endpoint())
-	if err != nil {
-		return true, nil, errors.New("Native endpoint configuration is invalid.")
-	}
-	resolved, err := resolveEndpoint(ctx, host)
-	if err != nil {
+	if err = resolveNativePlanEndpoints(ctx, plan); err != nil {
 		return true, nil, errors.New("Encrypted native endpoint bootstrap failed.")
-	}
-	if err = plan.SetEndpoint(net.JoinHostPort(resolved, port)); err != nil {
-		return true, nil, errors.New("Native endpoint configuration is invalid.")
 	}
 	plan.UseEphemeralListenPort()
 	if err = ctx.Err(); err != nil {

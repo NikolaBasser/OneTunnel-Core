@@ -306,3 +306,20 @@ Additional hops use the existing engine-native target scope; standalone Xray or
 native OS-tunnel targets are still rejected. Chain failure never substitutes an
 independent direct transport. Quality probes can measure a policy chain only
 when its transport dependency actually reaches the selected primary profile.
+
+Native WG/AWG profiles accept up to eight peers. Each peer retains its own
+endpoint, key, keepalive and AllowedIPs; duplicate public keys or identical
+network prefixes are rejected. Nested prefixes use the engine's longest-prefix
+selection. Full-device multi-peer profiles must explicitly provide IPv4 and,
+when the interface has IPv6, IPv6 default routes plus DNS. Defaults are never
+silently assigned to every peer. Single-peer full-device expansion is unchanged.
+All peer endpoints must resolve and use the same physical uplink before startup;
+multiple simultaneous physical uplinks are not supported. Diagnostic quality
+probes reject an identity shared with any active peer to prevent roaming.
+
+Dedicated Windows VM acceptance covers two- and three-hop Shadowsocks UDP
+chains through compiled proxy ingress/routing policy, IPv4/IPv6 destinations,
+each hop's outage and recovery. It does not yet establish UDP chain behavior
+through an OS TUN. Multi-peer WG/AWG acceptance covers userspace TCP/UDP,
+IPv4/IPv6, peer failure isolation and aggregate counters; an OS-interface
+multi-peer acceptance run remains outstanding.
