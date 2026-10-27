@@ -163,3 +163,8 @@
 !/internal/platform/chain_acceptance_safety_windows_test.go
 !/internal/embeddedsingbox/chain_udp_fixture_test.go
 !/internal/embeddedawg/multipeer_test.go
+!/internal/embeddedawg/native_windows_test.go
+!/internal/protocol/advanced_dns_mux_test.go
+!/internal/embeddedsingbox/advanced_dns_fixture_test.go
+!/internal/embeddedsingbox/multiplex_fixture_test.go
+!/internal/embeddedxray/mux_udp_fixture_test.go

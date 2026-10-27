@@ -80,8 +80,12 @@ func TestMultiplePeersValidationAndUAPI(t *testing.T) {
 }
 
 func TestMultiplePeersTrafficAndFailureIsolation(t *testing.T) {
-	for _, kind := range []int{1, 0} {
-		t.Run(fmt.Sprintf("protocol-%d", kind), func(t *testing.T) {
+	for _, mode := range []string{"wg", "awg", "awg31"} {
+		kind := 1
+		if mode != "wg" {
+			kind = 0
+		}
+		t.Run(mode, func(t *testing.T) {
 			private := make([]string, 3)
 			public := make([]string, 3)
 			ports := make([]uint16, 3)
@@ -92,6 +96,9 @@ func TestMultiplePeersTrafficAndFailureIsolation(t *testing.T) {
 			obfuscation := ""
 			if kind == 0 {
 				obfuscation = "Jc=1\nJmin=1\nJmax=3\nS1=1\nS2=2\nH1=11\nH2=12\nH3=13\nH4=14\n"
+			}
+			if mode == "awg31" {
+				obfuscation = "Jc=3\nJmin=10\nJmax=30\nS1=16\nS2=16\nS3=16\nS4=16\nH1=1\nH2=2\nH3=3\nH4=4\nHeaderProtectionKey=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=\nContentPaddingAddition=0-16\nRekeyAfterTime=110-130\nRekeyTimeout=4-6\nRejectAfterTime=170-190\nKeepaliveTimeout=20-30\nMaxHandshakeAttempts=12-18\nRandomTrailers=on\nDisableCookies=off\n"
 			}
 			peer := func(i int) string {
 				return fmt.Sprintf("[Peer]\nPublicKey=%s\nEndpoint=127.0.0.1:%d\nAllowedIPs=10.77.0.%d/32,fd77::%d/128\nPersistentKeepalive=1\n", public[i], ports[i], i+1, i+1)

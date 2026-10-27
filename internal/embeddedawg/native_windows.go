@@ -193,6 +193,9 @@ func StartNative(ctx context.Context, p *Plan, name string, uplinkIndex uint32) 
 	return native, nil
 }
 func (n *Native) Done() <-chan struct{} { return n.core.Done() }
+func (n *Native) Counters() (uploaded, downloaded uint64, err error) {
+	return n.core.Counters()
+}
 func (n *Native) Close() error {
 	if n == nil {
 		return nil

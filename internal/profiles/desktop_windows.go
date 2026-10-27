@@ -307,12 +307,14 @@ func existsProfileFile(root, name string) bool {
 func isAdmin() bool { return windows.GetCurrentProcessToken().IsElevated() }
 
 type TransportInput struct {
-	Fragment                         bool
-	FragmentLength, FragmentInterval string
-	Noise                            bool
-	NoiseLength, NoiseDelay          string
-	Mux                              bool
-	MuxConcurrency                   string
+	Fragment                                                                     bool
+	FragmentLength, FragmentInterval                                             string
+	Noise                                                                        bool
+	NoiseLength, NoiseDelay                                                      string
+	Mux                                                                          bool
+	MuxConcurrency                                                               string
+	MuxProtocol, MuxMaxConnections, MuxMinStreams, XUDPConcurrency, UDP443Policy string
+	MuxPadding                                                                   bool
 }
 
 func (input TransportInput) Parse() (protocol.TransportOptions, error) {
@@ -320,5 +322,23 @@ func (input TransportInput) Parse() (protocol.TransportOptions, error) {
 	if err != nil || concurrency < 1 || concurrency > 128 {
 		return protocol.TransportOptions{}, errors.New("Укажи число потоков MUX от 1 до 128.")
 	}
-	return protocol.TransportOptions{Fragment: input.Fragment, FragmentLength: strings.TrimSpace(input.FragmentLength), FragmentInterval: strings.TrimSpace(input.FragmentInterval), Noise: input.Noise, NoiseLength: strings.TrimSpace(input.NoiseLength), NoiseDelay: strings.TrimSpace(input.NoiseDelay), Mux: input.Mux, MuxConcurrency: concurrency}, nil
+	parse := func(raw string) (int, error) {
+		if strings.TrimSpace(raw) == "" {
+			return 0, nil
+		}
+		return strconv.Atoi(strings.TrimSpace(raw))
+	}
+	max, err := parse(input.MuxMaxConnections)
+	if err != nil {
+		return protocol.TransportOptions{}, protocol.ErrConfiguration
+	}
+	min, err := parse(input.MuxMinStreams)
+	if err != nil {
+		return protocol.TransportOptions{}, protocol.ErrConfiguration
+	}
+	xudp, err := parse(input.XUDPConcurrency)
+	if err != nil {
+		return protocol.TransportOptions{}, protocol.ErrConfiguration
+	}
+	return protocol.TransportOptions{Fragment: input.Fragment, FragmentLength: strings.TrimSpace(input.FragmentLength), FragmentInterval: strings.TrimSpace(input.FragmentInterval), Noise: input.Noise, NoiseLength: strings.TrimSpace(input.NoiseLength), NoiseDelay: strings.TrimSpace(input.NoiseDelay), Mux: input.Mux, MuxConcurrency: concurrency, MuxProtocol: strings.ToLower(strings.TrimSpace(input.MuxProtocol)), MuxMaxConnections: max, MuxMinStreams: min, MuxPadding: input.MuxPadding, XUDPConcurrency: xudp, UDP443Policy: strings.ToLower(strings.TrimSpace(input.UDP443Policy))}, nil
 }

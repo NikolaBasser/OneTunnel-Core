@@ -77,7 +77,11 @@ func keep(v any) { runtime.KeepAlive(v) }
 
 //go:uintptrescapes
 func wCall(name string, args ...uintptr) error {
+	done := traceWFPCall(name)
 	r, _, _ := wfp.NewProc(name).Call(args...)
+	if done != nil {
+		done(uint32(r))
+	}
 	if r != 0 {
 		return windows.Errno(uint32(r))
 	}

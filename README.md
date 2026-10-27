@@ -319,7 +319,42 @@ probes reject an identity shared with any active peer to prevent roaming.
 
 Dedicated Windows VM acceptance covers two- and three-hop Shadowsocks UDP
 chains through compiled proxy ingress/routing policy, IPv4/IPv6 destinations,
-each hop's outage and recovery. It does not yet establish UDP chain behavior
-through an OS TUN. Multi-peer WG/AWG acceptance covers userspace TCP/UDP,
-IPv4/IPv6, peer failure isolation and aggregate counters; an OS-interface
-multi-peer acceptance run remains outstanding.
+each hop's outage and recovery. Three-hop UDP also passes through the actual
+shared OS TUN, including 4096-byte payloads. Two-peer WG/AWG acceptance covers
+native and shared OS interfaces, IPv4/IPv6 TCP/UDP, peer outage/recovery,
+failure isolation and counters. AWG 3.1 additionally has a repeated userspace
+multi-peer regression. Native interface wrappers expose aggregate encrypted
+transport counters to the runtime; shared-TUN counters retain payload scope.
+The eight-peer configuration limit is not an eight-peer live acceptance result.
+One initial UDP-TUN startup reached the independent 80-second recovery deadline;
+two subsequent complete runs passed. That initial delay remains unexplained.
+
+Profile DNS supports HTTPS, TLS, QUIC (`quic`) and HTTP/3 (`h3`). QUIC uses
+port 853 by default; HTTP/3 uses port 443 and the same validated path format
+as HTTPS. All resolvers retain the proxy detour and TLS name verification.
+DoQ/DoH3 require a UDP-capable primary; HTTP/Naive primaries are rejected.
+Optional `DNSCache` accepts `Disabled` and `Capacity` (128–65536, default 4096).
+Omitting it retains the engine's previous defaults; no stale/never-expire cache
+or disk persistence is enabled.
+
+Optional `FakeIP` applies to A/AAAA queries in shared full-device TUN mode.
+Explicit domain resolver rules retain precedence; other query types still reach
+the real resolver. Mappings are memory-only and reset when the engine stops.
+The router restores domains and resolves real addresses before IP/rule-set/LAN
+matching so synthetic addresses cannot bypass IP reject rules. Internal endpoint
+lookups use `remote-dns` explicitly rather than the FakeIP transport.
+
+Transport settings retain legacy VLESS Xray MUX and add XUDP concurrency plus
+UDP443 policy (`skip`, `allow`, `reject`; default remains `skip`). Shadowsocks
+and Trojan support `h2mux`, `smux` and `yamux`, optional padding, a connection
+count policy or a stream-count policy. With a positive connection count, the
+stream limit is inactive and minimum streams controls connection reuse; with
+zero connections, the stream limit applies and minimum streams must be zero.
+Unsupported protocol/transport combinations are rejected before startup.
+
+Dedicated VM tests cover encrypted DNS, cache hits/disable, TLS rejection,
+proxy outage, FakeIP domain/IP rule preservation, multiplex stream sharing,
+UDP payloads, broken-session recovery and all three XUDP UDP443 policies.
+DoH3 and FakeIP additionally pass through the actual OS TUN. Startup tracing
+is available only in explicitly tagged safety builds; production WFP policy
+and permitted processes are unchanged.

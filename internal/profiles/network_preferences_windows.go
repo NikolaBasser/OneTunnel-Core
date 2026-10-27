@@ -12,22 +12,46 @@ import (
 )
 
 type NetworkPreferencesView struct {
+	FakeIP                                                                                             bool
+	CacheMode, CacheCapacity                                                                           string
 	ID, Token, Message, Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
 	AllowLAN                                                                                           bool
 	Supported, CanSave                                                                                 bool
 }
 
 type NetworkInput struct {
+	FakeIP                                                                         bool
+	CacheMode, CacheCapacity                                                       string
 	Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
 	AllowLAN                                                                       bool
 }
 
 func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 	mode := strings.ToLower(strings.TrimSpace(input.Mode))
-	if mode != "default" && mode != "https" && mode != "tls" {
+	if mode != "default" && mode != "https" && mode != "tls" && mode != "quic" && mode != "h3" {
 		return nil, protocol.ErrConfiguration
 	}
 	options := &protocol.NetworkOptions{}
+	options.FakeIP = input.FakeIP
+	cacheMode := strings.ToLower(strings.TrimSpace(input.CacheMode))
+	switch cacheMode {
+	case "", "default":
+		if strings.TrimSpace(input.CacheCapacity) != "" {
+			return nil, protocol.ErrConfiguration
+		}
+	case "disabled", "bounded":
+		capacity := 4096
+		if strings.TrimSpace(input.CacheCapacity) != "" {
+			var err error
+			capacity, err = strconv.Atoi(strings.TrimSpace(input.CacheCapacity))
+			if err != nil {
+				return nil, protocol.ErrConfiguration
+			}
+		}
+		options.DNSCache = &protocol.DNSCacheOptions{Disabled: cacheMode == "disabled", Capacity: capacity}
+	default:
+		return nil, protocol.ErrConfiguration
+	}
 	options.AllowLAN = input.AllowLAN
 	if mode != "default" {
 		port := 0
@@ -143,6 +167,14 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 		view.Supported = profile.Protocol >= 0 && profile.Protocol <= protocol.MaxKind
 		view.CanSave = view.CanSave && view.Supported
 		if dns := profile.Network; dns != nil {
+			view.FakeIP = dns.FakeIP
+			if dns.DNSCache != nil {
+				view.CacheMode = "bounded"
+				if dns.DNSCache.Disabled {
+					view.CacheMode = "disabled"
+				}
+				view.CacheCapacity = strconv.Itoa(dns.DNSCache.Capacity)
+			}
 			view.AllowLAN = dns.AllowLAN
 			if dns.DNS != nil {
 				view.Mode, view.ServerIP, view.ServerName = dns.DNS.Transport, dns.DNS.ServerIP, dns.DNS.ServerName
