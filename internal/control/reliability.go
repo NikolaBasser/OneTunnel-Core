@@ -27,6 +27,7 @@ func CompatibleFallback(primary, backup Profile, full bool) bool {
 type ReliabilityOptions struct {
 	AutoReconnect bool
 	UseFallbacks  bool
+	AutoSelect    bool
 }
 
 type ProfileCheck struct {

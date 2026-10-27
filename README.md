@@ -264,3 +264,21 @@ this history. Configuration changes reset that profile's history; cancelled or
 stale batches add nothing. `group.results.clear` with `ClearQuality: true` clears
 both results and history. This is a measurement foundation; it does not perform
 background probing, automatic quality selection or active-session switching.
+
+Profiles can opt into service-owned proxy quality selection with
+`Reliability.AutoSelect`, together with `AutoReconnect` and `UseFallbacks`.
+The selected server starts immediately. Every twenty seconds the service checks
+its HTTPS health and one compatible backup with an isolated proxy engine.
+Only the last three successful HTTPS timings (within ten minutes) qualify;
+selection uses their median, a minimum improvement of 25% and 50 ms, two winning
+measurements and a two-minute minimum hold. Switching uses the existing bounded
+retry path and verifies HTTPS before promotion. Failures invalidate quality
+history, and ordinary outage fallback remains available. Stop cancels probes.
+Up to eight backups are visited in order; larger groups take longer to qualify.
+
+This opt-in mode currently rejects native WG/AWG, whole-device TUN and custom
+DNS/routing policy. It measures HTTPS latency and reachability, not throughput.
+A switch creates a new connection/statistics session and local proxy port;
+clients must follow service state. Existing explicit system-proxy ownership is
+restored when the connection changes and requires explicit activation again.
+The manual group-check history is separate from service quality decisions.

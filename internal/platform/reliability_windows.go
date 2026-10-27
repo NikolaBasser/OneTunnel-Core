@@ -16,6 +16,7 @@ type retryState struct {
 	full              bool
 	attempt, failures int
 	next              time.Time
+	quality           *qualitySelection
 }
 
 func (r *Runtime) armRetry(request control.Request) {
@@ -28,6 +29,9 @@ func (r *Runtime) armRetry(request control.Request) {
 		r.retry.targets = append(r.retry.targets, request.Fallbacks...)
 	}
 	r.retry.full = request.FullDevice
+	if qualityEligible(*request.Profile, request.FullDevice) {
+		r.retry.quality = &qualitySelection{held: time.Now(), samples: map[string][]qualitySample{}}
+	}
 	r.retry.next = time.Now().Add(20 * time.Second)
 }
 
@@ -48,7 +52,7 @@ func (r *Runtime) retryContext() (context.Context, context.CancelFunc) {
 
 // Called with the operation mutex held. No timer ever removes traffic policy.
 func (r *Runtime) maintainConnection() {
-	r.maintainConnectionWith(retryEffects{time.Now, r.connectionHealth, r.disconnectMode, r.start, r.activateStatistics})
+	r.maintainConnectionWith(retryEffects{now: time.Now, health: r.connectionHealth, disconnect: r.disconnectMode, start: r.start, activate: r.activateStatistics, quality: r.measureQuality})
 }
 
 type retryEffects struct {
@@ -57,6 +61,7 @@ type retryEffects struct {
 	disconnect func(context.Context, bool) error
 	start      func(context.Context, control.Request) error
 	activate   func()
+	quality    func(context.Context, time.Duration) int
 }
 
 func (r *Runtime) maintainConnectionWith(effects retryEffects) {
@@ -65,21 +70,34 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 	}
 	ctx, cancel := r.retryContext()
 	defer cancel()
+	preferred := 0
 	if !r.transportFailed && !r.retrying && r.session != nil {
 		probeCtx, done := context.WithTimeout(ctx, 5*time.Second)
+		started := effects.now()
 		err := effects.health(probeCtx)
 		done()
 		r.retry.next = effects.now().Add(20 * time.Second)
 		if err == nil {
 			r.retry.failures = 0
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		r.retry.failures++
-		if r.retry.failures < 2 {
-			return
+			index := 0
+			if effects.quality != nil && r.retry.quality != nil {
+				index = effects.quality(ctx, effects.now().Sub(started))
+			}
+			if ctx.Err() != nil || index <= 0 || index >= len(r.retry.targets) {
+				return
+			}
+			preferred = index
+		} else {
+			if r.retry.quality != nil {
+				r.retry.quality.reset(effects.now())
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			r.retry.failures++
+			if r.retry.failures < 2 {
+				return
+			}
 		}
 	}
 	if r.retry.attempt >= 9 {
@@ -102,6 +120,9 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 	}
 	// First retry keeps the selected server; following retries visit its backups.
 	index := (r.retry.attempt - 1) % len(r.retry.targets)
+	if preferred > 0 {
+		index = preferred
+	}
 	target := r.retry.targets[index]
 	request := control.Request{Version: 1, Command: "start", Profile: &target, FullDevice: r.retry.full}
 	err := ctx.Err()
@@ -120,6 +141,9 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 		}
 	}
 	if err == nil {
+		if r.retry.quality != nil {
+			r.retry.quality.reset(effects.now())
+		}
 		effects.activate()
 		r.retrying = false
 		r.transportFailed = false

@@ -54,6 +54,7 @@ type acceptanceGateway struct {
 	address     string
 	sockets     map[net.Conn]bool
 	connections int
+	delay       time.Duration
 }
 
 func newAcceptanceGateway() (*acceptanceGateway, error) {
@@ -101,6 +102,16 @@ func (g *acceptanceGateway) serve(generation net.Listener, w http.ResponseWriter
 	if request.Method != http.MethodConnect || !acceptanceConnectTarget(request.Host) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+	g.mu.Lock()
+	delay := g.delay
+	g.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-request.Context().Done():
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	upstream, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", request.Host)

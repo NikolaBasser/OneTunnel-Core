@@ -423,7 +423,7 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 		return Applied{}, e
 	}
 	if batch {
-		if r.Reliability != nil && (r.Reliability.AutoReconnect || r.Reliability.UseFallbacks) {
+		if r.Reliability != nil && (r.Reliability.AutoReconnect || r.Reliability.UseFallbacks || r.Reliability.AutoSelect) {
 			return Applied{}, errors.New("Сначала импортируй подписку, затем настрой восстановление у нужного профиля.")
 		}
 		if r.ID != "" {

@@ -93,6 +93,9 @@ func Validate(r Request) string {
 		if p.Reliability != nil && p.Reliability.UseFallbacks && !p.Reliability.AutoReconnect {
 			return "invalid_configuration"
 		}
+		if p.Reliability != nil && p.Reliability.AutoSelect && (!p.Reliability.AutoReconnect || !p.Reliability.UseFallbacks || p.Protocol < 2 || !protocol.NetworkOptionsEmpty(p.Network) || r.FullDevice) {
+			return "invalid_configuration"
+		}
 		policyMode := r.FullDevice || r.Command == "check-profile"
 		if protocol.ValidateNetworkOptions(p.Network, p.Protocol, policyMode) != nil {
 			return "invalid_configuration"
