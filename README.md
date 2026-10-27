@@ -327,7 +327,7 @@ multi-peer regression. Native interface wrappers expose aggregate encrypted
 transport counters to the runtime; shared-TUN counters retain payload scope.
 The eight-peer configuration limit is not an eight-peer live acceptance result.
 One initial UDP-TUN startup reached the independent 80-second recovery deadline;
-two subsequent complete runs passed. That initial delay remains unexplained.
+A later cold start after VM reboot and 20 repeated starts passed. WFP tracing in safety builds found no incomplete calls (26.5 ms maximum on the cold start, 59.3 ms across ten traced cycles). Ten additional cycles passed without tracing. The initial delay remains unexplained; these results are not a confirmed root-cause fix.
 
 Profile DNS supports HTTPS, TLS, QUIC (`quic`) and HTTP/3 (`h3`). QUIC uses
 port 853 by default; HTTP/3 uses port 443 and the same validated path format
