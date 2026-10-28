@@ -78,6 +78,13 @@ type trackedPacketConn struct {
 	stats *control.StatisticsAccumulator
 }
 
+// Preserve buffer sizing without exposing an unwrap path that bypasses counters.
+func (c trackedPacketConn) FrontHeadroom() int  { return N.CalculateFrontHeadroom(c.PacketConn) }
+func (c trackedPacketConn) RearHeadroom() int   { return N.CalculateRearHeadroom(c.PacketConn) }
+func (c trackedPacketConn) ReaderOverhead() int { return N.CalculateReaderOverhead(c.PacketConn) }
+func (c trackedPacketConn) ReaderMTU() int      { return N.CalculateMTU(c.PacketConn, nil) }
+func (c trackedPacketConn) WriterMTU() int      { return N.CalculateMTU(nil, c.PacketConn) }
+
 func (c trackedPacketConn) ReadPacket(b *buf.Buffer) (M.Socksaddr, error) {
 	destination, err := c.PacketConn.ReadPacket(b)
 	if err == nil {

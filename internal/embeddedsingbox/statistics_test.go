@@ -84,6 +84,48 @@ func (c countPacketConn) ReadPacket(b *buf.Buffer) (M.Socksaddr, error) {
 }
 func (c countPacketConn) WritePacket(*buf.Buffer, M.Socksaddr) error { return c.writeErr }
 
+type headerPacketConn struct{ N.PacketConn }
+
+func (headerPacketConn) FrontHeadroom() int  { return 10 }
+func (headerPacketConn) RearHeadroom() int   { return 16 }
+func (headerPacketConn) ReaderOverhead() int { return 12 }
+func (headerPacketConn) ReaderMTU() int      { return 4096 }
+func (headerPacketConn) WriterMTU() int      { return 2048 }
+func (headerPacketConn) WritePacket(b *buf.Buffer, _ M.Socksaddr) error {
+	b.ExtendHeader(10)
+	b.Extend(16)
+	b.Release()
+	return nil
+}
+
+func TestIngressPacketPreservesBufferRequirements(t *testing.T) {
+	start := time.Unix(200, 0)
+	stats, id, err := control.NewStatisticsAccumulator(start, "proxy-payload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := newIngressTracker(stats, false).RoutedPacketConnection(context.Background(), headerPacketConn{}, adapter.InboundContext{Inbound: "local"}, nil, nil)
+	if N.CalculateFrontHeadroom(pc) != 10 || N.CalculateRearHeadroom(pc) != 16 || N.CalculateReaderOverhead(pc) != 12 || N.CalculateMTU(pc, nil) != 4096 || N.CalculateMTU(nil, pc) != 2048 {
+		t.Fatal("statistics wrapper hid packet buffer requirements")
+	}
+	if N.UnwrapPacketWriter(pc) != pc || N.UnwrapPacketReader(pc) != pc {
+		t.Fatal("statistics can be bypassed by unwrapping")
+	}
+	options := N.NewReadWaitOptions(nil, pc)
+	b := options.NewPacketBuffer()
+	if _, err := b.Write([]byte("payload")); err != nil {
+		t.Fatal(err)
+	}
+	options.PostReturn(b)
+	if err := pc.WritePacket(b, M.Socksaddr{}); err != nil {
+		t.Fatal(err)
+	}
+	got := stats.Snapshot(start.Add(time.Second), id)
+	if *got.DownloadedBytes != 7 {
+		t.Fatalf("transport headers entered payload statistics: %d", *got.DownloadedBytes)
+	}
+}
+
 func TestIngressTrackerCountsOnlySelectedIngressAndSinglePath(t *testing.T) {
 	start := time.Unix(100, 0)
 	stats, id, err := control.NewStatisticsAccumulator(start, "proxy-payload")

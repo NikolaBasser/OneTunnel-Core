@@ -5,9 +5,13 @@ package embeddedsingbox
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -25,9 +29,13 @@ type udpChainGate struct {
 	sent   atomic.Int64
 }
 
-func newUDPChainGate(t *testing.T, port int) (int, *udpChainGate) {
+func newUDPChainGate(t *testing.T, port int, frontPort ...int) (int, *udpChainGate) {
 	t.Helper()
-	front, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	address := "127.0.0.1:0"
+	if len(frontPort) > 0 {
+		address = fmt.Sprintf("127.0.0.1:%d", frontPort[0])
+	}
+	front, err := net.ListenPacket("udp4", address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,27 +96,55 @@ func TestCompiledUDPChains(t *testing.T) {
 	if host != "WIN-67BE833BA6F" {
 		t.Skip("live chain acceptance runs only on the dedicated VM")
 	}
-	for _, hops := range []int{2, 3} {
-		t.Run(fmt.Sprintf("%d-hops", hops), func(t *testing.T) {
+	tlsFixture := httptest.NewTLSServer(http.NotFoundHandler())
+	cert := tlsFixture.TLS.Certificates[0]
+	tlsFixture.Close()
+	certPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]}))
+	key, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}))
+	for _, kinds := range [][]int{{5, 5}, {5, 5, 5}, {5, protocol.Trojan}, {protocol.Trojan, 5}, {5, protocol.Trojan, 5}, {protocol.Trojan, 5, protocol.Trojan}} {
+		t.Run(fmt.Sprint(kinds), func(t *testing.T) {
+			hops := len(kinds)
 			sources := make([]string, hops)
-			gates := make([]*udpChainGate, hops)
+			countsAtHop := make([]func() int64, hops)
+			setOnline := make([]func(bool), hops)
 			for i := range sources {
 				port := freePort(t)
 				password := fmt.Sprintf("chain-fixture-password-%d", i)
-				startJSON(t, map[string]any{"inbounds": []any{map[string]any{"type": "shadowsocks", "listen": "127.0.0.1", "listen_port": port, "method": "chacha20-ietf-poly1305", "password": password}}, "outbounds": []any{map[string]any{"type": "direct"}}})
-				front, gate := newUDPChainGate(t, port)
-				gates[i] = gate
-				sources[i] = fmt.Sprintf("ss://chacha20-ietf-poly1305:%s@127.0.0.1:%d", password, front)
+				in := map[string]any{"type": "shadowsocks", "listen": "127.0.0.1", "listen_port": port, "method": "chacha20-ietf-poly1305", "password": password}
+				if kinds[i] == protocol.Trojan {
+					delete(in, "method")
+					delete(in, "password")
+					in["type"] = "trojan"
+					in["users"] = []any{map[string]any{"password": password}}
+					in["tls"] = map[string]any{"enabled": true, "certificate": []string{certPEM}, "key": []string{keyPEM}}
+				}
+				startJSON(t, map[string]any{"inbounds": []any{in}, "outbounds": []any{map[string]any{"type": "direct"}}})
+				tcpGate := newMuxGate(t, port)
+				countsAtHop[i] = tcpGate.accepted.Load
+				setOnline[i] = tcpGate.setOnline
+				front := tcpGate.listener.Addr().(*net.TCPAddr).Port
+				if kinds[i] == protocol.Trojan {
+					sources[i] = fmt.Sprintf("trojan://%s@127.0.0.1:%d?sni=example.com", password, front)
+				} else {
+					_, udpGate := newUDPChainGate(t, port, front)
+					countsAtHop[i] = func() int64 { return tcpGate.accepted.Load() + udpGate.sent.Load() }
+					setOnline[i] = func(value bool) { tcpGate.setOnline(value); udpGate.online.Store(value) }
+					sources[i] = fmt.Sprintf("ss://chacha20-ietf-poly1305:%s@127.0.0.1:%d", password, front)
+				}
 			}
 			targets := []protocol.PolicyTarget{}
 			via := "@primary"
 			for i := 1; i < hops; i++ {
 				name := fmt.Sprintf("hop%d", i)
-				targets = append([]protocol.PolicyTarget{{Name: name, Protocol: 5, Source: sources[i], Via: via}}, targets...)
+				targets = append([]protocol.PolicyTarget{{Name: name, Protocol: kinds[i], Source: sources[i], Via: via}}, targets...)
 				via = name
 			}
 			localPort := freePort(t)
-			plan, err := protocol.CompileWithNetwork(sources[0], 5, true, localPort, freePort(t), "unused", nil, &protocol.NetworkOptions{Targets: targets, Rules: []protocol.NetworkRule{{Kind: "network", Value: "udp", Action: "proxy", Outbound: via}}})
+			plan, err := protocol.CompileWithNetwork(sources[0], kinds[0], true, localPort, freePort(t), "unused", nil, &protocol.NetworkOptions{Targets: targets, Rules: []protocol.NetworkRule{{Kind: "network", Value: "udp", Action: "proxy", Outbound: via}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,6 +160,12 @@ func TestCompiledUDPChains(t *testing.T) {
 				}
 			}
 			config["inbounds"] = inbounds
+			for _, out := range config["outbounds"].([]any) {
+				o := out.(map[string]any)
+				if o["type"] == "trojan" {
+					o["tls"].(map[string]any)["certificate"] = []string{certPEM}
+				}
+			}
 			startJSON(t, config)
 			ingress := startJSON(t, map[string]any{"outbounds": []any{map[string]any{"type": "socks", "tag": "ingress", "server": "127.0.0.1", "server_port": localPort, "version": "5"}}})
 			out, ok := ingress.instance.Outbound().Outbound("ingress")
@@ -160,8 +202,8 @@ func TestCompiledUDPChains(t *testing.T) {
 						sequence++
 						before := received.Load()
 						counts := make([]int64, hops)
-						for i, g := range gates {
-							counts[i] = g.sent.Load()
+						for i, count := range countsAtHop {
+							counts[i] = count()
 						}
 						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 						defer cancel()
@@ -174,7 +216,7 @@ func TestCompiledUDPChains(t *testing.T) {
 						}
 						defer packet.Close()
 						_ = packet.SetDeadline(time.Now().Add(800 * time.Millisecond))
-						payload := bytes.Repeat([]byte(fmt.Sprintf("%s/%d/", family, sequence)), 150)
+						payload := bytes.Repeat([]byte(fmt.Sprintf("%s/%d/", family, sequence)), 512)
 						_, err = packet.WriteTo(payload, destination.UDPAddr())
 						b := make([]byte, 65535)
 						n := 0
@@ -185,8 +227,8 @@ func TestCompiledUDPChains(t *testing.T) {
 							if err != nil || !bytes.Equal(payload, b[:n]) {
 								t.Fatalf("UDP round trip: %v", err)
 							}
-							for i, g := range gates {
-								if g.sent.Load() <= counts[i] {
+							for i, count := range countsAtHop {
+								if count() <= counts[i] {
 									t.Fatalf("hop %d bypassed", i)
 								}
 							}
@@ -195,10 +237,10 @@ func TestCompiledUDPChains(t *testing.T) {
 						}
 					}
 					exchange(true)
-					for i, g := range gates {
-						g.online.Store(false)
+					for i, online := range setOnline {
+						online(false)
 						exchange(false)
-						g.online.Store(true)
+						online(true)
 						exchange(true)
 						t.Logf("hop %d: outage blocked; restored UDP delivery", i)
 					}
