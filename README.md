@@ -303,6 +303,20 @@ split rules/targets/sets while retaining separate DNS and LAN preferences.
 Legacy manual/mixed policies migrate to custom; plain imported-set policies to
 preset; empty policies to none. Existing callers omitting RoutingMode retain the
 legacy RulesText behavior. Changes apply after explicit save and reconnect.
+The preset editor stores an ordered `PresetConfigText` catalog with each set's
+official source format, category and action. `network.presets.configure/remove`
+only change a draft; `network.presets.refresh` atomically refreshes all configured
+sources, reuses downloads of the same DAT file, and leaves the previous draft
+intact if any source fails. Newly configured sets must be refreshed before an
+active preset policy is saved. Source files total at most 96 MiB per refresh and
+the complete operation is bounded to 110 seconds. Legacy sets lacking origin
+metadata require choosing their source before they can be refreshed.
+`network.rules.append` validates and appends a `PolicyRule` to a caller-supplied
+draft, preserving all other rules, targets and sets. The Windows process picker
+supplies exact executable paths, never executes the selected file.
+The explicit `none` mode now disables direct LAN exceptions as well: all captured
+traffic uses the selected VPN/proxy. The LAN preference is retained for other
+modes. This does not change the scope of local-proxy capture or peer AllowedIPs.
 Do not apply upstream China-oriented `direct` lists as a universal routing preset.
 
 The existing desktop rules editor accepts either legacy pipe-separated lines or

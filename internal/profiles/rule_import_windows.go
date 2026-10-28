@@ -19,6 +19,8 @@ type RuleImportInput struct {
 	Download, Replace                    bool
 }
 type RuleImportResult struct {
+	PresetConfigText  string
+	PresetRows        []PresetRow
 	PresetSummary     string
 	RulesText, SHA256 string
 	Count             int
@@ -79,6 +81,10 @@ func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImpo
 	}
 	name := strings.ToLower(strings.TrimSpace(request.Name))
 	category := strings.ToLower(strings.TrimSpace(request.Category))
+	category = strings.TrimPrefix(category, request.Format+":")
+	if (request.Format == "geosite" || request.Format == "geoip") && (!geoCategory.MatchString(category) || len(category) > 120 || request.Format == "geoip" && strings.Contains(category, "@")) {
+		return fail(fmt.Errorf("Укажите категорию: geosite — например youtube или category-ads-all; geoip — ru или telegram."))
+	}
 	// Validate names/actions before any download or file read.
 	probe := &protocol.NetworkOptions{RuleSets: []protocol.RuleSet{{Name: name, Members: []protocol.NetworkRule{{Kind: "domain", Value: "example.invalid"}}}}, Rules: []protocol.NetworkRule{{Kind: "rule-set", Value: name, Action: request.Action}}}
 	if _, e = protocol.NormalizeNetworkOptions(probe); e != nil {
@@ -145,5 +151,24 @@ func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImpo
 		return fail(e)
 	}
 	hash := sha256.Sum256(content)
-	return RuleImportResult{PresetSummary: presetSummary(normalized), RulesText: string(encoded), SHA256: hex.EncodeToString(hash[:]), Count: len(data.Domain) + len(data.DomainSuffix) + len(data.DomainKeyword) + len(data.DomainRegex) + len(data.IPCIDR)}, nil
+	catalog, err := presetCatalog(normalized, input.PresetConfigText)
+	if err != nil {
+		return fail(err)
+	}
+	if source, err := normalizedPresetSource(*request); err == nil {
+		source.Pending = false
+		for _, r := range normalized.Rules {
+			if r.Kind == "rule-set" && r.Value == name {
+				source.Action = r.Action
+				break
+			}
+		}
+		for i, s := range catalog {
+			if s.Name == name {
+				source.Name = name
+				catalog[i] = source
+			}
+		}
+	}
+	return RuleImportResult{PresetConfigText: encodePresetCatalog(catalog), PresetRows: presetRows(catalog), PresetSummary: presetSummary(normalized), RulesText: string(encoded), SHA256: hex.EncodeToString(hash[:]), Count: len(data.Domain) + len(data.DomainSuffix) + len(data.DomainKeyword) + len(data.DomainRegex) + len(data.IPCIDR)}, nil
 }

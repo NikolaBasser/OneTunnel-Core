@@ -12,6 +12,8 @@ import (
 )
 
 type NetworkPreferencesView struct {
+	PresetConfigText                                                                                   string
+	PresetRows                                                                                         []PresetRow
 	PresetSummary                                                                                      string
 	RoutingMode, CustomRulesText, PresetRulesText                                                      string
 	FakeIP                                                                                             bool
@@ -22,6 +24,7 @@ type NetworkPreferencesView struct {
 }
 
 type NetworkInput struct {
+	PresetConfigText                                                               string
 	RoutingMode, CustomRulesText, PresetRulesText                                  string
 	FakeIP                                                                         bool
 	CacheMode, CacheCapacity                                                       string
@@ -41,6 +44,18 @@ func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 		}
 		if state.Mode == "preset" {
 			input.RulesText = state.PresetRulesText
+			catalog, e := presetCatalogFromText(state.PresetRulesText, state.PresetConfigText)
+			if e != nil {
+				return nil, e
+			}
+			for _, source := range catalog {
+				if source.Pending {
+					return nil, errors.New("Обновите выбранные пресеты перед сохранением.")
+				}
+			}
+		}
+		if state.Mode == "none" {
+			input.AllowLAN = false
 		}
 	}
 	mode := strings.ToLower(strings.TrimSpace(input.Mode))
@@ -237,6 +252,12 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 		view.RoutingMode, view.CustomRulesText, view.PresetRulesText = state.Mode, state.CustomRulesText, state.PresetRulesText
 		preset, _ := (NetworkInput{Mode: "default", RulesText: state.PresetRulesText}).Parse()
 		view.PresetSummary = presetSummary(preset)
+		view.PresetConfigText = state.PresetConfigText
+		catalog, _ := presetCatalog(preset, state.PresetConfigText)
+		view.PresetRows = presetRows(catalog)
+		if state.HasLANPreference {
+			view.AllowLAN = state.AllowLAN
+		}
 		if !view.Supported {
 			view.Message = "Network preferences require a supported full-device profile."
 		} else if profile.Protocol < 2 {

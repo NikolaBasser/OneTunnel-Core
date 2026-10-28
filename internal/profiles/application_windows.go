@@ -54,6 +54,7 @@ type Request struct {
 	NetworkInput     *NetworkInput
 	PolicyQuery      *protocol.RouteQuery
 	RuleImport       *RuleImportInput
+	PolicyRule       *protocol.NetworkRule
 	Password         string
 	RestoreSchedules bool
 	Schedule         *SubscriptionSchedule
@@ -748,6 +749,14 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.analyzeNetwork(r.ID, nil)
 	case "network.rules.import":
 		return importRuleDraft(ctx, r.NetworkInput, r.RuleImport)
+	case "network.presets.configure":
+		return configurePresetDraft(r.NetworkInput, r.RuleImport, false)
+	case "network.presets.remove":
+		return configurePresetDraft(r.NetworkInput, r.RuleImport, true)
+	case "network.presets.refresh":
+		return refreshPresetDraft(ctx, r.NetworkInput)
+	case "network.rules.append":
+		return appendRuleDraft(r.NetworkInput, r.PolicyRule)
 	case "network.explain":
 		if r.PolicyQuery == nil {
 			return nil, protocol.ErrConfiguration

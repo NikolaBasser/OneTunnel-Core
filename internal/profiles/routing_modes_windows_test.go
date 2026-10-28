@@ -50,7 +50,7 @@ func TestRoutingModeBanks(t *testing.T) {
 			t.Fatal(e)
 		}
 		n := doc.Profiles[0].Network
-		if n == nil || n.DNS.ServerIP != "1.1.1.1" || !n.AllowLAN {
+		if n == nil || n.DNS.ServerIP != "1.1.1.1" || n.AllowLAN != (mode != "none") || !view.AllowLAN {
 			t.Fatal("routing switch changed DNS/LAN")
 		}
 		custom, e := protocol.ExplainRoute(n, protocol.RouteQuery{Domain: "a.custom.example", IP: "203.0.113.8", Port: 443})

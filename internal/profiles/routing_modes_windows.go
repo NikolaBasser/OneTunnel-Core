@@ -9,7 +9,10 @@ import (
 )
 
 // Only the selected bank is copied into Profile.Network and sent to the service.
-type RoutingPreferences struct{ Mode, CustomRulesText, PresetRulesText string }
+type RoutingPreferences struct {
+	Mode, CustomRulesText, PresetRulesText, PresetConfigText string
+	AllowLAN, HasLANPreference                               bool
+}
 
 func presetSummary(n *protocol.NetworkOptions) string {
 	if n == nil || len(n.Rules) == 0 {
@@ -89,6 +92,11 @@ func (p RoutingPreferences) normalized() (RoutingPreferences, error) {
 			p.CustomRulesText = routeText(n)
 		} else {
 			p.PresetRulesText = routeText(n)
+			catalog, e := presetCatalog(n, p.PresetConfigText)
+			if e != nil {
+				return p, e
+			}
+			p.PresetConfigText = encodePresetCatalog(catalog)
 		}
 	}
 	return p, nil
@@ -151,12 +159,12 @@ func checkStoredRoutingProfiles(doc *Document) error {
 			delete(doc.RoutingProfiles, id)
 			continue
 		}
-		if state.Mode != "none" && state.Mode != "preset" && state.Mode != "custom" || len(state.CustomRulesText) > 8*1024*1024 || len(state.PresetRulesText) > 8*1024*1024 {
+		if state.Mode != "none" && state.Mode != "preset" && state.Mode != "custom" || len(state.CustomRulesText) > 8*1024*1024 || len(state.PresetRulesText) > 8*1024*1024 || len(state.PresetConfigText) > 65536 {
 			return protocol.ErrConfiguration
 		}
 	}
 	return nil
 }
 func (input NetworkInput) routingPreferences() (RoutingPreferences, error) {
-	return (RoutingPreferences{Mode: input.RoutingMode, CustomRulesText: input.CustomRulesText, PresetRulesText: input.PresetRulesText}).normalized()
+	return (RoutingPreferences{Mode: input.RoutingMode, CustomRulesText: input.CustomRulesText, PresetRulesText: input.PresetRulesText, PresetConfigText: input.PresetConfigText, AllowLAN: input.AllowLAN, HasLANPreference: true}).normalized()
 }
