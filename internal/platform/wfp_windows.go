@@ -18,6 +18,14 @@ import (
 // These native layouts and key byte order match the former C# implementation.
 // Persistent filters deliberately outlive every process and service handle.
 type wDisplay struct{ Name, Description *uint16 }
+type wSession struct {
+	Key                                 windows.GUID
+	Display                             wDisplay
+	Flags, TransactionWaitMS, ProcessID uint32
+	SID                                 *windows.SID
+	Username                            *uint16
+	KernelMode                          int32
+}
 type wBlob struct {
 	Size uint32
 	Data *byte
@@ -119,8 +127,17 @@ func (t trafficLock) ownerHash() [32]byte {
 func (t trafficLock) marker() string { return filepath.Join(t.root, "kill-switch.json") }
 func (t trafficLock) needed() bool   { _, e := os.Stat(t.marker()); return e == nil || !os.IsNotExist(e) }
 func openWFP() (windows.Handle, error) {
+	return openWFPWith(wCall)
+}
+func openWFPWith(call wfpCallFunc) (windows.Handle, error) {
+	if unsafe.Sizeof(wSession{}) != 72 {
+		return 0, errors.New("unsupported WFP session layout")
+	}
+	// A nil session can leave provider reads waiting behind another writer.
+	// Keep failures bounded; flags stay zero so crash protection remains persistent.
+	session := wSession{TransactionWaitMS: 5000}
 	var h windows.Handle
-	e := wCall("FwpmEngineOpen0", 0, 10, 0, 0, uintptr(unsafe.Pointer(&h)))
+	e := callWFP(call, "FwpmEngineOpen0", 0, 10, 0, uintptr(unsafe.Pointer(&session)), uintptr(unsafe.Pointer(&h)))
 	return h, e
 }
 func wDisplayName(name string) wDisplay {

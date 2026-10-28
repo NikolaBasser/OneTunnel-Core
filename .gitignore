@@ -131,6 +131,7 @@
 
 !/cmd/onetunnel-service/main_windows_test.go
 !/internal/platform/wfp_lifecycle_windows_test.go
+!/internal/platform/wfp_contention_safety_windows_test.go
 !/internal/profiles/user_automation_recovery_windows_test.go
 
 !/internal/platform/reliability_state_windows_test.go

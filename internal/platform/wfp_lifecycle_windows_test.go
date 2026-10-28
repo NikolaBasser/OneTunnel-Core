@@ -7,10 +7,32 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
 	"golang.org/x/sys/windows"
 )
+
+func TestWFPSessionBoundsWaitWithoutDynamicLifetime(t *testing.T) {
+	h, err := openWFPWith(func(name string, args ...uintptr) error {
+		if name != "FwpmEngineOpen0" || len(args) != 5 || args[3] == 0 {
+			t.Fatal("explicit WFP session missing")
+		}
+		session := (*wSession)(unsafe.Pointer(args[3]))
+		if session.TransactionWaitMS != 5000 || session.Flags != 0 {
+			t.Fatalf("unbounded wait or dynamic filter lifetime: %+v", session)
+		}
+		*(*windows.Handle)(unsafe.Pointer(args[4])) = 123
+		return nil
+	})
+	if err != nil || h != 123 {
+		t.Fatalf("open result: %v %v", h, err)
+	}
+	want := errors.New("synthetic WFP open failure")
+	if _, err := openWFPWith(func(string, ...uintptr) error { return want }); !errors.Is(err, want) {
+		t.Fatalf("WFP error lost: %v", err)
+	}
+}
 
 func TestTrafficLockRemovalReconcilesOwnerWithoutMarker(t *testing.T) {
 	lock := trafficLock{owner: "test-owner", root: `C:\synthetic\runtime`}
