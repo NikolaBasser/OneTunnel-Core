@@ -53,6 +53,7 @@ type Request struct {
 	TransportInput   *TransportInput
 	NetworkInput     *NetworkInput
 	PolicyQuery      *protocol.RouteQuery
+	RuleImport       *RuleImportInput
 	Password         string
 	RestoreSchedules bool
 	Schedule         *SubscriptionSchedule
@@ -745,6 +746,8 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return a.groupResultsFastest(r.Token)
 	case "network.analyze":
 		return a.analyzeNetwork(r.ID, nil)
+	case "network.rules.import":
+		return importRuleDraft(ctx, r.NetworkInput, r.RuleImport)
 	case "network.explain":
 		if r.PolicyQuery == nil {
 			return nil, protocol.ErrConfiguration

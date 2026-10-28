@@ -67,7 +67,7 @@ func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
 		return nil, protocol.ErrConfiguration
 	}
 	if strings.HasPrefix(strings.TrimSpace(input.RulesText), "{") {
-		if len(input.RulesText) > 1024*1024 {
+		if len(input.RulesText) > 8*1024*1024 {
 			return nil, protocol.ErrConfiguration
 		}
 		var policy struct {

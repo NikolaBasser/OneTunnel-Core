@@ -169,3 +169,6 @@
 !/internal/embeddedsingbox/advanced_dns_fixture_test.go
 !/internal/embeddedsingbox/multiplex_fixture_test.go
 !/internal/embeddedxray/mux_udp_fixture_test.go
+!/internal/protocol/loyalsoldier_test.go
+!/internal/profiles/rule_import_windows_test.go
+!/internal/embeddedsingbox/loyalsoldier_fixture_test.go

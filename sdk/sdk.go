@@ -18,6 +18,13 @@ type DNSOptions = protocol.DNSOptions
 type NetworkRule = protocol.NetworkRule
 type PolicyTarget = protocol.PolicyTarget
 type RuleSet = protocol.RuleSet
+type RuleSetData = protocol.RuleSetData
+
+// ImportLoyalsoldier parses a caller-supplied dataset without fetching or applying it.
+func ImportLoyalsoldier(format, category string, content []byte) (*RuleSetData, error) {
+	return protocol.ImportLoyalsoldier(format, category, content)
+}
+
 type RouteQuery = protocol.RouteQuery
 type RoutePrediction = protocol.RoutePrediction
 type PolicyAnalysis = protocol.PolicyAnalysis

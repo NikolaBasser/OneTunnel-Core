@@ -25,6 +25,7 @@ type PolicyTarget struct {
 type RuleSet struct {
 	Name    string
 	Members []NetworkRule
+	Data    *RuleSetData `json:"Data,omitempty"`
 }
 
 func normalizePort(value string) (string, bool) {
@@ -102,12 +103,29 @@ func normalizePolicy(options *NetworkOptions) error {
 		}
 	}
 	total := 0
+	dataBytes := 0
 	for i := range options.RuleSets {
 		set := &options.RuleSets[i]
 		set.Name = strings.ToLower(strings.TrimSpace(set.Name))
 		total += len(set.Members)
-		if !policyName.MatchString(set.Name) || sets[set.Name] || len(set.Members) == 0 || len(set.Members) > MaxRuleSetMembers || total > 8192 {
+		if !policyName.MatchString(set.Name) || sets[set.Name] || (len(set.Members) == 0 && set.Data == nil) || len(set.Members) > MaxRuleSetMembers || total > 8192 {
 			return ErrConfiguration
+		}
+		if set.Data != nil {
+			if len(set.Members) != 0 {
+				return ErrConfiguration
+			}
+			if err := set.Data.normalize(); err != nil {
+				return err
+			}
+			b, err := json.Marshal(set.Data)
+			if err != nil {
+				return err
+			}
+			dataBytes += len(b)
+			if dataBytes > 7*1024*1024/2 {
+				return ErrConfiguration
+			}
 		}
 		sets[set.Name] = true
 		for j, member := range set.Members {
@@ -230,6 +248,10 @@ func appendPolicy(config object, p *Plan, options *NetworkOptions) error {
 	config["outbounds"] = outbounds
 	sets := []any{}
 	for _, set := range options.RuleSets {
+		if set.Data != nil {
+			sets = append(sets, object{"type": "inline", "tag": setTag(set.Name), "rules": []any{set.Data.matcher()}})
+			continue
+		}
 		members := []any{}
 		for _, member := range set.Members {
 			members = append(members, matcher(member))
@@ -370,6 +392,10 @@ func matchPolicy(r NetworkRule, n *NetworkOptions, q RouteQuery) int {
 		m = 0
 		for _, set := range n.RuleSets {
 			if set.Name != r.Value {
+				continue
+			}
+			if set.Data != nil {
+				m = set.Data.match(q)
 				continue
 			}
 			for _, member := range set.Members {

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"net"
 	"net/netip"
 	"reflect"
@@ -80,6 +81,7 @@ func CloneNetworkOptions(options *NetworkOptions) *NetworkOptions {
 	copy.RuleSets = append([]RuleSet(nil), options.RuleSets...)
 	for i := range copy.RuleSets {
 		copy.RuleSets[i].Members = append([]NetworkRule(nil), options.RuleSets[i].Members...)
+		copy.RuleSets[i].Data = options.RuleSets[i].Data.clone()
 	}
 	copy.Rules = append([]NetworkRule(nil), options.Rules...)
 	copy.Resolvers = append([]DNSOptions(nil), options.Resolvers...)
@@ -205,6 +207,12 @@ func NormalizeNetworkOptions(options *NetworkOptions) (*NetworkOptions, error) {
 	}
 	if err := normalizePolicy(out); err != nil {
 		return nil, err
+	}
+	if len(out.RuleSets) > 0 {
+		b, e := json.Marshal(out)
+		if e != nil || len(b) > 4*1024*1024 {
+			return nil, ErrConfiguration
+		}
 	}
 	return out, nil
 }

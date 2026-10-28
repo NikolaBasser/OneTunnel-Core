@@ -269,7 +269,31 @@ a named target for a `proxy` rule. Port values are single ports or closed ranges
 and network values are `tcp`/`udp`. References and limits are validated before
 network mutation. Targets requiring another Xray instance or native OS tunnel
 are rejected; primary profile engine support is unchanged. Sets are portable
-inline snapshots, without automatic remote fetching or filesystem references.
+inline snapshots, without automatic background remote fetching or runtime filesystem references.
+
+Loyalsoldier imports support both [v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)
+(`geosite.dat`, `geoip.dat`) and scalar domain/IP payloads from
+[clash-rules](https://github.com/Loyalsoldier/clash-rules). `network.rules.import`
+accepts `NetworkInput` plus `RuleImport` (`Format`, `Category`, `Name`, `Action`,
+`Path`, `Download`, `Replace`) and returns a **draft**, record count and source
+SHA-256. Formats are `geosite`, `geoip`, `clash-domain`, `clash-ipcidr`.
+Downloads are explicit and restricted to the official release branches; local
+files are also supported. The importer never saves or changes a connection.
+New set rules append last; replacement requires `Replace` and preserves all
+existing rule actions, conditions and ordering. Saving remains a separate action.
+
+GeoSite exact/suffix/substring/RE2 expressions and one positive boolean attribute
+(`google@cn`) retain their matching semantics. GeoIP covers IPv4 and IPv6.
+Clash supports exact domains, `+.` suffixes and CIDRs; classical process lists,
+other wildcard syntax and inverse GeoIP entries are rejected explicitly.
+No rules are silently dropped or truncated. Source files are limited to 64 MiB;
+compact `RuleSets[].Data.Snapshot` gzip/base64 snapshots have bounded decoding
+(16 MiB, 500,000 entries, at most 256 RE2 expressions per set). Encoded snapshots
+total at most 3.5 MiB and the complete network policy at most 4 MiB. Existing
+inline `Members` limits remain unchanged. Snapshots travel inside encrypted
+profiles/backups and require no network access during connection startup.
+Manual reimport refreshes a set; there is no background update scheduler.
+Do not apply upstream China-oriented `direct` lists as a universal routing preset.
 
 The existing desktop rules editor accepts either legacy pipe-separated lines or
 a strict JSON object containing `Rules`, `Targets` and `RuleSets`. For example:
