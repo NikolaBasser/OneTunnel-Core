@@ -211,7 +211,7 @@ func (s *Store) load() (Document, error) {
 		}
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
-	if e = normalizeRoutingProfiles(&d); e != nil {
+	if e = checkStoredRoutingProfiles(&d); e != nil {
 		return d, e
 	}
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)

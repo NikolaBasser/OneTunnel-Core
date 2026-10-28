@@ -135,6 +135,28 @@ func normalizeRoutingProfiles(doc *Document) error {
 	}
 	return nil
 }
+
+// Inactive banks were validated before encryption; parse them on use, not on each
+// background library read. External backup data and every save still validate fully.
+func checkStoredRoutingProfiles(doc *Document) error {
+	if len(doc.RoutingProfiles) > 2000 {
+		return protocol.ErrConfiguration
+	}
+	valid := map[string]bool{}
+	for _, p := range doc.Profiles {
+		valid[p.ID] = true
+	}
+	for id, state := range doc.RoutingProfiles {
+		if !valid[id] {
+			delete(doc.RoutingProfiles, id)
+			continue
+		}
+		if state.Mode != "none" && state.Mode != "preset" && state.Mode != "custom" || len(state.CustomRulesText) > 8*1024*1024 || len(state.PresetRulesText) > 8*1024*1024 {
+			return protocol.ErrConfiguration
+		}
+	}
+	return nil
+}
 func (input NetworkInput) routingPreferences() (RoutingPreferences, error) {
 	return (RoutingPreferences{Mode: input.RoutingMode, CustomRulesText: input.CustomRulesText, PresetRulesText: input.PresetRulesText}).normalized()
 }

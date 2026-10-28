@@ -167,3 +167,29 @@ func TestRoutingModeLegacyMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutingInactiveBankValidatedBeforeUse(t *testing.T) {
+	p := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Inactive", "Manual")
+	store := managementStore(t, Document{Profiles: []Profile{p}})
+	doc, e := store.Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	doc.RoutingProfiles = map[string]RoutingPreferences{p.ID: {Mode: "none", CustomRulesText: "invalid inactive draft"}}
+	overwriteEncryptedDocument(t, store, doc)
+	loaded, e := store.Load()
+	if e != nil || loaded.Profiles[0].Network != nil {
+		t.Fatal("inactive bank affected ordinary runtime metadata", e)
+	}
+	app := &Application{Store: store}
+	if _, e = app.networkPreferencesView(p.ID); e == nil {
+		t.Fatal("invalid inactive bank reached editor")
+	}
+	if e = store.Save(doc); e == nil {
+		t.Fatal("invalid inactive bank accepted by save")
+	}
+	raw, _ := json.Marshal(doc)
+	if _, e = decodeBackupDocument(raw); e == nil {
+		t.Fatal("invalid inactive bank accepted by backup")
+	}
+}

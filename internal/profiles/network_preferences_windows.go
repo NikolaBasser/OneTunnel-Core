@@ -230,7 +230,10 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 				view.RulesText = string(data)
 			}
 		}
-		state := routingView(doc, profile)
+		state, stateErr := routingView(doc, profile).normalized()
+		if stateErr != nil {
+			return NetworkPreferencesView{}, stateErr
+		}
 		view.RoutingMode, view.CustomRulesText, view.PresetRulesText = state.Mode, state.CustomRulesText, state.PresetRulesText
 		preset, _ := (NetworkInput{Mode: "default", RulesText: state.PresetRulesText}).Parse()
 		view.PresetSummary = presetSummary(preset)
