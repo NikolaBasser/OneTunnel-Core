@@ -246,6 +246,9 @@ func decodeBackupDocument(plain []byte) (doc Document, err error) {
 		}
 		p.Network = network
 	}
+	if normalizeRoutingProfiles(&doc) != nil {
+		return doc, errBackupUnavailable
+	}
 	if doc.FavoriteIDs == nil {
 		doc.FavoriteIDs = []string{}
 	}
@@ -397,6 +400,7 @@ func eraseDocument(doc *Document) {
 		delete(doc.SubscriptionSchedules, key)
 	}
 	clear(doc.FavoriteIDs)
+	clear(doc.RoutingProfiles)
 	clear(doc.CollapsedGroups)
 	*doc = Document{}
 }

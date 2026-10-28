@@ -293,6 +293,16 @@ total at most 3.5 MiB and the complete network policy at most 4 MiB. Existing
 inline `Members` limits remain unchanged. Snapshots travel inside encrypted
 profiles/backups and require no network access during connection startup.
 Manual reimport refreshes a set; there is no background update scheduler.
+The Windows user host exposes mutually exclusive routing modes `preset`, `custom`
+and `none` through `NetworkInput.RoutingMode`, `PresetRulesText` and
+`CustomRulesText`. Separate encrypted per-profile banks survive mode changes,
+duplication, subscription refresh by stable profile ID and portable backups.
+Only the selected bank is copied into `Profile.Network` and reaches the service;
+inactive banks are omitted from ordinary presentation metadata. `none` clears
+split rules/targets/sets while retaining separate DNS and LAN preferences.
+Legacy manual/mixed policies migrate to custom; plain imported-set policies to
+preset; empty policies to none. Existing callers omitting RoutingMode retain the
+legacy RulesText behavior. Changes apply after explicit save and reconnect.
 Do not apply upstream China-oriented `direct` lists as a universal routing preset.
 
 The existing desktop rules editor accepts either legacy pipe-separated lines or

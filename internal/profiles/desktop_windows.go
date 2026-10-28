@@ -204,6 +204,7 @@ func (a *Application) desktop(ctx context.Context, r Request) (any, error) {
 // for connection, and sent to WPF only on an explicit editor.load request.
 func presentationDocument(document Document) Document {
 	view := document
+	view.RoutingProfiles = nil
 	if document.UserSettings != nil {
 		preferences := *document.UserSettings
 		view.UserSettings = &preferences

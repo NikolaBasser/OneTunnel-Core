@@ -95,6 +95,9 @@ func (a *Application) duplicateProfile(id, name, group, token string) (Applied, 
 	copy := cloneOrganizationProfile(profile)
 	copy.ID, copy.Name, copy.Group = newID(), name, group
 	doc.Profiles = append(doc.Profiles, copy)
+	if state, ok := doc.RoutingProfiles[profile.ID]; ok {
+		doc.RoutingProfiles[copy.ID] = state
+	}
 	if err := a.Store.Save(doc); err != nil {
 		return Applied{}, errors.New("profile copy could not be saved")
 	}

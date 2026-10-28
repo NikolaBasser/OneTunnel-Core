@@ -171,4 +171,5 @@
 !/internal/embeddedxray/mux_udp_fixture_test.go
 !/internal/protocol/loyalsoldier_test.go
 !/internal/profiles/rule_import_windows_test.go
+!/internal/profiles/routing_modes_windows_test.go
 !/internal/embeddedsingbox/loyalsoldier_fixture_test.go

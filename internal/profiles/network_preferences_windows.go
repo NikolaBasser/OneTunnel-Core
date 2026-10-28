@@ -12,6 +12,8 @@ import (
 )
 
 type NetworkPreferencesView struct {
+	PresetSummary                                                                                      string
+	RoutingMode, CustomRulesText, PresetRulesText                                                      string
 	FakeIP                                                                                             bool
 	CacheMode, CacheCapacity                                                                           string
 	ID, Token, Message, Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
@@ -20,6 +22,7 @@ type NetworkPreferencesView struct {
 }
 
 type NetworkInput struct {
+	RoutingMode, CustomRulesText, PresetRulesText                                  string
 	FakeIP                                                                         bool
 	CacheMode, CacheCapacity                                                       string
 	Mode, ServerIP, ServerName, Port, Path, RulesText, ResolversText, DNSRulesText string
@@ -27,6 +30,19 @@ type NetworkInput struct {
 }
 
 func (input NetworkInput) Parse() (*protocol.NetworkOptions, error) {
+	if input.RoutingMode != "" {
+		state, e := input.routingPreferences()
+		if e != nil {
+			return nil, e
+		}
+		input.RulesText = ""
+		if state.Mode == "custom" {
+			input.RulesText = state.CustomRulesText
+		}
+		if state.Mode == "preset" {
+			input.RulesText = state.PresetRulesText
+		}
+	}
 	mode := strings.ToLower(strings.TrimSpace(input.Mode))
 	if mode != "default" && mode != "https" && mode != "tls" && mode != "quic" && mode != "h3" {
 		return nil, protocol.ErrConfiguration
@@ -214,6 +230,10 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 				view.RulesText = string(data)
 			}
 		}
+		state := routingView(doc, profile)
+		view.RoutingMode, view.CustomRulesText, view.PresetRulesText = state.Mode, state.CustomRulesText, state.PresetRulesText
+		preset, _ := (NetworkInput{Mode: "default", RulesText: state.PresetRulesText}).Parse()
+		view.PresetSummary = presetSummary(preset)
 		if !view.Supported {
 			view.Message = "Network preferences require a supported full-device profile."
 		} else if profile.Protocol < 2 {
@@ -249,7 +269,30 @@ func (a *Application) saveNetworkPreferences(r Request) (Document, error) {
 		if parseErr != nil {
 			return Document{}, parseErr
 		}
-		if protocol.NetworkOptionsEquivalent(doc.Profiles[i].Network, network) {
+		stateChanged := false
+		if r.NetworkInput.RoutingMode != "" {
+			state, stateErr := r.NetworkInput.routingPreferences()
+			if stateErr != nil {
+				return Document{}, stateErr
+			}
+			stateChanged = doc.RoutingProfiles[r.ID] != state
+			if doc.RoutingProfiles == nil {
+				doc.RoutingProfiles = map[string]RoutingPreferences{}
+			}
+			doc.RoutingProfiles[r.ID] = state
+		} else if _, ok := doc.RoutingProfiles[r.ID]; ok {
+			state := doc.RoutingProfiles[r.ID]
+			state.Mode = inferRouting(network)
+			if state.Mode == "custom" {
+				state.CustomRulesText = routeText(network)
+			}
+			if state.Mode == "preset" {
+				state.PresetRulesText = routeText(network)
+			}
+			stateChanged = doc.RoutingProfiles[r.ID] != state
+			doc.RoutingProfiles[r.ID] = state
+		}
+		if protocol.NetworkOptionsEquivalent(doc.Profiles[i].Network, network) && !stateChanged {
 			return presentationDocument(doc), nil
 		}
 		doc.Profiles[i].Network = network

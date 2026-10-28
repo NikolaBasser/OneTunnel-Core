@@ -16,7 +16,8 @@ import (
 )
 
 type Document struct {
-	UserSettings          *UserPreferences `json:",omitempty"`
+	RoutingProfiles       map[string]RoutingPreferences `json:",omitempty"`
+	UserSettings          *UserPreferences              `json:",omitempty"`
 	Version               int
 	Profiles              []Profile
 	FavoriteIDs           []string `json:",omitempty"`
@@ -210,6 +211,9 @@ func (s *Store) load() (Document, error) {
 		}
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
+	if e = normalizeRoutingProfiles(&d); e != nil {
+		return d, e
+	}
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
 	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
 	s.revision = sha256.Sum256(encrypted)
@@ -274,6 +278,9 @@ func (s *Store) Save(d Document) error {
 		}
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
+	if e = normalizeRoutingProfiles(&d); e != nil {
+		return e
+	}
 	data, e := json.Marshal(d)
 	if e != nil || len(data) > 32*1024*1024 {
 		return ErrImport

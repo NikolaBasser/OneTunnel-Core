@@ -19,6 +19,7 @@ type RuleImportInput struct {
 	Download, Replace                    bool
 }
 type RuleImportResult struct {
+	PresetSummary     string
 	RulesText, SHA256 string
 	Count             int
 }
@@ -144,5 +145,5 @@ func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImpo
 		return fail(e)
 	}
 	hash := sha256.Sum256(content)
-	return RuleImportResult{RulesText: string(encoded), SHA256: hex.EncodeToString(hash[:]), Count: len(data.Domain) + len(data.DomainSuffix) + len(data.DomainKeyword) + len(data.DomainRegex) + len(data.IPCIDR)}, nil
+	return RuleImportResult{PresetSummary: presetSummary(normalized), RulesText: string(encoded), SHA256: hex.EncodeToString(hash[:]), Count: len(data.Domain) + len(data.DomainSuffix) + len(data.DomainKeyword) + len(data.DomainRegex) + len(data.IPCIDR)}, nil
 }
