@@ -218,6 +218,9 @@ func (s *Store) load() (Document, error) {
 	if e = checkStoredRoutingProfiles(&d); e != nil {
 		return d, e
 	}
+	if e = migrateProviderAddressRouting(&d); e != nil {
+		return d, e
+	}
 	d.FavoriteIDs = normalizeFavoriteIDs(d.FavoriteIDs, d.Profiles)
 	d.UserSettings = normalizeStoredUserPreferences(d.UserSettings, d)
 	s.revision = sha256.Sum256(encrypted)

@@ -42,7 +42,7 @@ func TestImportedRoutingSubscriptionLifecycle(t *testing.T) {
 	if e != nil || result.Draft.Count != 1 {
 		t.Fatal("select without subscription download", e)
 	}
-	if !strings.Contains(result.Draft.PresetConfigText, `"Group":"Provider"`) || !strings.Contains(strings.Join(result.Warnings, " "), "protocol") {
+	if !strings.Contains(result.Draft.PresetConfigText, `"Group":"Provider"`) || !strings.Contains(strings.Join(result.Warnings, " "), "исключены") {
 		t.Fatal("source/limitations lost")
 	}
 	doc, _ := store.Load()

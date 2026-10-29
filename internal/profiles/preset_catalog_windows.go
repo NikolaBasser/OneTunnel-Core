@@ -21,6 +21,7 @@ type presetSource struct {
 	Pending                        bool
 	URL, Label                     string   `json:",omitempty"`
 	Group                          string   `json:",omitempty"`
+	Scope                          string   `json:",omitempty"`
 	Index                          int      `json:",omitempty"`
 	Warnings                       []string `json:",omitempty"`
 }

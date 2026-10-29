@@ -90,12 +90,20 @@ func (a *Application) selectImportedRouting(ctx context.Context, group string, i
 	if input.SHA256 != list.SHA256 {
 		return ProviderRoutingResult{}, errors.New("Подписка обновилась. Откройте настройки заново и выберите актуальную конфигурацию.")
 	}
+	raw, e = subscriptionAddressRouting(raw)
+	if e != nil {
+		return ProviderRoutingResult{}, e
+	}
+	addresses, e := parseProviderRouting(ctx, raw, ProviderRoutingInput{Index: -1}, nil)
+	if e != nil {
+		return ProviderRoutingResult{}, e
+	}
 	source := doc.SubscriptionSources[group]
 	if !validProviderURL(source) {
 		source = "https://imported.invalid/snapshot"
 	}
 	cache := map[string][]byte{}
-	result, e := parseProviderRouting(ctx, raw, ProviderRoutingInput{URL: source, Index: input.Index, SHA256: list.SHA256}, func(format, category string) (*protocol.RuleSetData, error) {
+	result, e := parseProviderRouting(ctx, raw, ProviderRoutingInput{URL: source, Index: 0, SHA256: addresses.SHA256}, func(format, category string) (*protocol.RuleSetData, error) {
 		data, ok := cache[format]
 		if !ok {
 			var err error
@@ -115,6 +123,13 @@ func (a *Application) selectImportedRouting(ctx context.Context, group string, i
 		return ProviderRoutingResult{}, ErrImport
 	}
 	catalog[0].Group = group
+	catalog[0].Label = group
+	catalog[0].Scope = "addresses"
+	if len(result.Warnings) > 0 {
+		result.Warnings = result.Warnings[:len(result.Warnings)-1]
+	}
+	result.Warnings = append(result.Warnings, []string{"Используются только правила по доменам и IP из подписки. Балансировщик, порты (в том числе UDP 443), ограничения протоколов и другие дополнительные условия исключены.", "Выбор маршрутизации не заменяет сервер и DNS текущего профиля. Остальной трафик идёт через выбранный VPN/прокси."}...)
+	catalog[0].Warnings = result.Warnings
 	result.Draft.PresetConfigText = encodePresetCatalog(catalog)
 	return result, nil
 }
