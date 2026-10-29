@@ -481,3 +481,10 @@ without probe coverage and duplicate native peer aliases are excluded from
 automatic composition. Manual composition retains the explicit 2–8 member list.
 No measured member means connection failure, with no direct fallback. Automatic
 membership is refreshed on the next connection, not during established flows.
+
+Geodata downloads use the authenticated active service's local SOCKS endpoint
+when available. Retries and official GitHub release-asset fallback retain that
+route; they never fall back directly after a proxy error. Only HTTPS redirects
+to GitHub asset hosts are accepted, TLS validation and the 128 MiB limit remain.
+Provider category errors include the category and underlying failure while
+leaving the previous policy draft intact.

@@ -209,13 +209,13 @@ func parseProviderRouting(ctx context.Context, content []byte, input ProviderRou
 		for _, v := range values {
 			if strings.HasPrefix(v, format+":") {
 				category := strings.TrimPrefix(v, format+":")
-				if !geoCategory.MatchString(category) {
+				if len(category) > 120 || !geoCategory.MatchString(category) {
 					bad = "неподдерживаемая категория"
 					break
 				}
 				d, e := geo(format, category)
 				if e != nil {
-					return ProviderRoutingResult{}, errors.New("Не удалось загрузить категорию geosite/geoip для правил провайдера; прежний черновик сохранён.")
+					return ProviderRoutingResult{}, fmt.Errorf("Не удалось подготовить %s:%s; прежний черновик сохранён. %w", format, category, e)
 				}
 				data.Domain = append(data.Domain, d.Domain...)
 				data.DomainSuffix = append(data.DomainSuffix, d.DomainSuffix...)

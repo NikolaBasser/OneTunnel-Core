@@ -756,21 +756,24 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 	case "network.analyze":
 		return a.analyzeNetwork(r.ID, nil)
 	case "network.rules.import":
+		if r.RuleImport != nil && r.RuleImport.Download {
+			ctx = a.ruleDownloadContext(ctx)
+		}
 		return importRuleDraft(ctx, r.NetworkInput, r.RuleImport)
 	case "network.presets.configure":
 		return configurePresetDraft(r.NetworkInput, r.RuleImport, false)
 	case "network.presets.remove":
 		return configurePresetDraft(r.NetworkInput, r.RuleImport, true)
 	case "network.presets.refresh":
-		return refreshPresetDraft(ctx, r.NetworkInput)
+		return refreshPresetDraft(a.ruleDownloadContext(ctx), r.NetworkInput)
 	case "network.presets.recommended":
-		return recommendedPresetDraft(ctx)
+		return recommendedPresetDraft(a.ruleDownloadContext(ctx))
 	case "network.presets.sources":
 		return a.importedRoutingSources()
 	case "network.presets.select":
-		return a.selectImportedRouting(ctx, r.Group, r.ProviderRouting)
+		return a.selectImportedRouting(a.ruleDownloadContext(ctx), r.Group, r.ProviderRouting)
 	case "network.presets.provider":
-		return providerRoutingDraft(ctx, r.ProviderRouting)
+		return providerRoutingDraft(a.ruleDownloadContext(ctx), r.ProviderRouting)
 	case "network.rules.append":
 		return appendRuleDraft(r.NetworkInput, r.PolicyRule)
 	case "network.explain":

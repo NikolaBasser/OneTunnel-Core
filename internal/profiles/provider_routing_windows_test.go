@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,19 @@ import (
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
+
+func TestProviderGeoFailureIdentifiesCategory(t *testing.T) {
+	raw := []byte(providerFixture)
+	list, err := parseProviderRouting(context.Background(), raw, ProviderRoutingInput{Index: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("network unavailable")
+	result, err := parseProviderRouting(context.Background(), raw, ProviderRoutingInput{Index: 0, SHA256: list.SHA256}, func(string, string) (*protocol.RuleSetData, error) { return nil, failure })
+	if !errors.Is(err, failure) || !strings.Contains(err.Error(), "geosite:category-ru") || result.Draft != nil || strings.Contains(err.Error(), "must-not-escape") {
+		t.Fatal("category failure hidden or draft changed", err)
+	}
+}
 
 func TestProviderRoutingHTTPSFetch(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

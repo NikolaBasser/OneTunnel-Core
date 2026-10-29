@@ -8,12 +8,35 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/platform"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
+
+type ruleDownloadProxyKey struct{}
+
+// Use the freshly authenticated service endpoint, never a saved/stale port.
+// Once selected, a failed proxy download must not retry through a direct route.
+func (a *Application) ruleDownloadContext(ctx context.Context) context.Context {
+	call := a.ServiceCall
+	if call == nil {
+		call = platform.CallService
+	}
+	check, cancel := context.WithTimeout(ctx, 2*time.Second)
+	reply, _, err := call(check, control.Request{Version: control.Version, Command: "status"})
+	cancel()
+	s := reply.State
+	if err == nil && reply.Error == nil && s.Active && !s.Reconnecting && !s.NeedsRecovery && s.LocalPort > 0 && s.LocalPort <= 65535 {
+		return context.WithValue(ctx, ruleDownloadProxyKey{}, &url.URL{Scheme: "socks5h", Host: "127.0.0.1:" + strconv.Itoa(s.LocalPort)})
+	}
+	return ctx
+}
 
 type RuleImportInput struct {
 	Format, Category, Name, Action, Path string
@@ -38,14 +61,45 @@ func downloadLoyal(ctx context.Context, format, category string) ([]byte, error)
 	if e != nil {
 		return nil, e
 	}
-	return downloadLoyalURL(ctx, format, url)
-}
-func downloadLoyalURL(ctx context.Context, format, url string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("rule_import_redirect") }}
+	// Same upstream release, through GitHub's official asset route.
+	return downloadLoyalSources(ctx, format, []string{url, "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/" + format + ".dat"})
+}
+func downloadLoyalSources(ctx context.Context, format string, addresses []string) ([]byte, error) {
+	var failures []string
+	for _, address := range addresses {
+		data, err := downloadLoyalURL(ctx, format, address)
+		if err == nil {
+			return data, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		failures = append(failures, err.Error())
+	}
+	return nil, fmt.Errorf("Адреса GitHub недоступны: %s", strings.Join(failures, "; "))
+}
+func downloadLoyalURL(ctx context.Context, format, address string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if proxyURL, ok := ctx.Value(ruleDownloadProxyKey{}).(*url.URL); ok {
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		if len(via) > 5 || r.URL.Scheme != "https" || r.URL.User != nil {
+			return fmt.Errorf("rule_import_redirect")
+		}
+		switch r.URL.Hostname() {
+		case "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+			return nil
+		}
+		return fmt.Errorf("rule_import_redirect")
+	}}
 	for attempt := 0; attempt < 2; attempt++ {
-		req, e := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 		if e != nil {
 			return nil, e
 		}
@@ -53,6 +107,10 @@ func downloadLoyalURL(ctx context.Context, format, url string) ([]byte, error) {
 		if e != nil {
 			if ctx.Err() == nil && attempt == 0 {
 				continue
+			}
+			var requestError *url.Error
+			if errors.As(e, &requestError) {
+				e = requestError.Err
 			}
 			return nil, fmt.Errorf("Не удалось загрузить %s.dat с GitHub; прежние правила сохранены: %w", format, e)
 		}
