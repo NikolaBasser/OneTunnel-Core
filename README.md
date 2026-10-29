@@ -287,7 +287,7 @@ Inverse GeoIP entries are rejected explicitly. Clash imports and downloads have
 been removed. Existing snapshots remain usable; retired origin metadata becomes
 a local snapshot requiring a geosite/geoip source before it can be refreshed.
 Unfetched retired origins are discarded without changing existing packet rules.
-No rules are silently dropped or truncated. Source files are limited to 64 MiB;
+No rules are silently dropped or truncated. Source files are limited to 128 MiB each (256 MiB per paired refresh);
 compact `RuleSets[].Data.Snapshot` gzip/base64 snapshots have bounded decoding
 (16 MiB, 500,000 entries, at most 256 RE2 expressions per set). Encoded snapshots
 total at most 3.5 MiB and the complete network policy at most 4 MiB. Existing
@@ -446,4 +446,5 @@ is available only in explicitly tagged safety builds; production WFP policy
 and permitted processes are unchanged.
 
 `network.presets.recommended` downloads geosite.dat + geoip.dat as one atomic preset draft: advertising reject first, category-ru domains direct, RU IP ranges direct, default proxy. It replaces only the preset bank when explicitly saved; custom rules are separate.
+
 

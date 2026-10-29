@@ -8,8 +8,25 @@ import (
 	"testing"
 
 	"github.com/xtls/xray-core/common/geodata"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestLoyalLargeFileLimit(t *testing.T) {
+	data, e := proto.Marshal(&geodata.GeoSiteList{Entry: []*geodata.GeoSite{{Code: "TEST", Domain: []*geodata.Domain{{Type: geodata.Domain_Domain, Value: "large.example"}}}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	data = protowire.AppendTag(data, 2, protowire.BytesType)
+	data = protowire.AppendBytes(data, make([]byte, 65*1024*1024))
+	got, e := ImportLoyalsoldier("geosite", "test", data)
+	if e != nil || len(got.DomainSuffix) != 1 {
+		t.Fatal("file above old 64 MiB limit rejected", e)
+	}
+	if _, e = ImportLoyalsoldier("geosite", "test", make([]byte, MaxGeoFileBytes+1)); e == nil {
+		t.Fatal("oversized file accepted")
+	}
+}
 
 func TestLoyalFormats(t *testing.T) {
 	site := &geodata.GeoSiteList{Entry: []*geodata.GeoSite{{Code: "TEST", Domain: []*geodata.Domain{

@@ -257,8 +257,8 @@ func refreshPresetDraft(ctx context.Context, input *NetworkInput) (RuleImportRes
 				return RuleImportResult{}, e
 			}
 			totalBytes += len(content)
-			if totalBytes > 96*1024*1024 {
-				return RuleImportResult{}, errors.New("Общий объём исходных наборов превышает 96 МиБ.")
+			if totalBytes > 2*protocol.MaxGeoFileBytes {
+				return RuleImportResult{}, errors.New("Общий объём исходных наборов превышает 256 МиБ.")
 			}
 			cache[url] = content
 		}

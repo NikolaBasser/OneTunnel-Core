@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const MaxGeoFileBytes = 64 * 1024 * 1024
+const MaxGeoFileBytes = 128 * 1024 * 1024
 
 // Select before decoding: the global GeoIP database need not be expanded in memory.
 func geoEntry(content []byte, category string) ([]byte, error) {

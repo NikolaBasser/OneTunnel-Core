@@ -11,10 +11,15 @@ import (
 
 const MaxFrame = 32 * 1024 * 1024
 
+var errBoundedSize = errors.New("Данные превышают допустимый размер.")
+
 func readBounded(r io.Reader, limit int) ([]byte, error) {
 	b, e := io.ReadAll(io.LimitReader(r, int64(limit)+1))
-	if e != nil || len(b) > limit {
-		return nil, errors.New("Данные превышают допустимый размер.")
+	if e != nil {
+		return nil, e
+	}
+	if len(b) > limit {
+		return nil, errBoundedSize
 	}
 	return b, nil
 }

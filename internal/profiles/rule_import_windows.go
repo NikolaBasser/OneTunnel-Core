@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -37,22 +38,43 @@ func downloadLoyal(ctx context.Context, format, category string) ([]byte, error)
 	if e != nil {
 		return nil, e
 	}
+	return downloadLoyalURL(ctx, format, url)
+}
+func downloadLoyalURL(ctx context.Context, format, url string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	req, e := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if e != nil {
-		return nil, e
-	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("rule_import_redirect") }}
-	response, e := client.Do(req)
-	if e != nil {
-		return nil, fmt.Errorf("Не удалось загрузить набор с GitHub: %w", e)
+	for attempt := 0; attempt < 2; attempt++ {
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if e != nil {
+			return nil, e
+		}
+		response, e := client.Do(req)
+		if e != nil {
+			if ctx.Err() == nil && attempt == 0 {
+				continue
+			}
+			return nil, fmt.Errorf("Не удалось загрузить %s.dat с GitHub; прежние правила сохранены: %w", format, e)
+		}
+		if response.StatusCode != http.StatusOK {
+			response.Body.Close()
+			return nil, fmt.Errorf("GitHub вернул HTTP %d; прежние правила сохранены.", response.StatusCode)
+		}
+		// Keep read failures distinct from a genuinely oversized database.
+		content, e := readBounded(response.Body, protocol.MaxGeoFileBytes)
+		response.Body.Close()
+		if e == nil {
+			return content, nil
+		}
+		if errors.Is(e, errBoundedSize) {
+			return nil, fmt.Errorf("%s.dat превышает допустимые 128 МиБ; прежние правила сохранены.", format)
+		}
+		if ctx.Err() == nil && attempt == 0 {
+			continue
+		}
+		return nil, fmt.Errorf("Загрузка %s.dat прервалась; прежние правила сохранены. Повторите обновление: %w", format, e)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub вернул HTTP %d; прежние правила сохранены.", response.StatusCode)
-	}
-	return readBounded(response.Body, protocol.MaxGeoFileBytes)
+	panic("unreachable")
 }
 func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImportInput) (RuleImportResult, error) {
 	fail := func(e error) (RuleImportResult, error) { return RuleImportResult{}, e }
@@ -106,7 +128,7 @@ func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImpo
 			var st os.FileInfo
 			st, e = f.Stat()
 			if e == nil && (!st.Mode().IsRegular() || st.Size() > protocol.MaxGeoFileBytes) {
-				e = fmt.Errorf("Нужен обычный файл не более 64 МиБ.")
+				e = fmt.Errorf("Нужен обычный файл не более 128 МиБ.")
 			}
 			if e == nil {
 				content, e = readBounded(f, protocol.MaxGeoFileBytes)
