@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -92,6 +93,18 @@ func (a *Application) renameGroup(group, name, token string) (Document, error) {
 		delete(doc.SubscriptionMetadata, group)
 		doc.SubscriptionMetadata[name] = metadata
 	}
+	if routes, exists := doc.ImportedRouting[group]; exists {
+		delete(doc.ImportedRouting, group)
+		doc.ImportedRouting[name] = routes
+	}
+	for id, state := range doc.RoutingProfiles {
+		var sources []presetSource
+		if json.Unmarshal([]byte(state.PresetConfigText), &sources) == nil && len(sources) == 1 && sources[0].Group == group {
+			sources[0].Group = name
+			state.PresetConfigText = encodePresetCatalog(sources)
+			doc.RoutingProfiles[id] = state
+		}
+	}
 	if schedule, exists := doc.SubscriptionSchedules[group]; exists {
 		delete(doc.SubscriptionSchedules, group)
 		doc.SubscriptionSchedules[name] = schedule
@@ -142,6 +155,7 @@ func (a *Application) deleteGroup(group, token string) (Document, error) {
 	doc.Profiles = kept
 	delete(doc.SubscriptionSources, group)
 	delete(doc.SubscriptionMetadata, group)
+	delete(doc.ImportedRouting, group)
 	delete(doc.SubscriptionSchedules, group)
 	collapsed := make([]string, 0, len(doc.CollapsedGroups))
 	for _, current := range doc.CollapsedGroups {

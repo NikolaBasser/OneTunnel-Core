@@ -16,6 +16,7 @@ import (
 )
 
 type Document struct {
+	ImportedRouting       map[string]json.RawMessage    `json:",omitempty"`
 	RoutingProfiles       map[string]RoutingPreferences `json:",omitempty"`
 	UserSettings          *UserPreferences              `json:",omitempty"`
 	Version               int
@@ -211,6 +212,9 @@ func (s *Store) load() (Document, error) {
 		}
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
+	if e = normalizeImportedRouting(&d); e != nil {
+		return d, e
+	}
 	if e = checkStoredRoutingProfiles(&d); e != nil {
 		return d, e
 	}
@@ -278,6 +282,9 @@ func (s *Store) Save(d Document) error {
 		}
 	}
 	d.SubscriptionSchedules = normalizeSubscriptionSchedules(d.SubscriptionSchedules, d.Profiles, d.SubscriptionSources)
+	if e := normalizeImportedRouting(&d); e != nil {
+		return e
+	}
 	if e = normalizeRoutingProfiles(&d); e != nil {
 		return e
 	}

@@ -20,6 +20,7 @@ type presetSource struct {
 	Name, Format, Category, Action string
 	Pending                        bool
 	URL, Label                     string   `json:",omitempty"`
+	Group                          string   `json:",omitempty"`
 	Index                          int      `json:",omitempty"`
 	Warnings                       []string `json:",omitempty"`
 }

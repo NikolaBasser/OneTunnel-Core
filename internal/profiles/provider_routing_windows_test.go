@@ -3,12 +3,36 @@ package profiles
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
+
+func TestProviderRoutingHTTPSFetch(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"remarks":"HTTPS policy","outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[{"type":"field","domain":["domain:test.example"],"outboundTag":"direct"}]}}`))
+	}))
+	defer server.Close()
+	previous := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = previous }()
+	input := &ProviderRoutingInput{URL: server.URL, Index: -1}
+	list, e := providerRoutingDraft(context.Background(), input)
+	if e != nil || len(list.Profiles) != 1 {
+		t.Fatal("HTTPS list", e)
+	}
+	input.Index = 0
+	input.SHA256 = list.SHA256
+	result, e := providerRoutingDraft(context.Background(), input)
+	if e != nil || result.Draft == nil || result.Draft.Count != 1 {
+		t.Fatal("HTTPS preview", e)
+	}
+}
 
 const providerFixture = `[{"remarks":"Fixture A","outbounds":[{"tag":"direct","protocol":"freedom"},{"tag":"block","protocol":"blackhole"},{"tag":"proxy","protocol":"vless","settings":{"credential":"must-not-escape"}}],"routing":{"rules":[{"type":"field","network":"udp","port":"443","outboundTag":"block"},{"type":"field","domain":["geosite:category-ru","domain:local.example","full:exact.example"],"outboundTag":"direct"},{"type":"field","protocol":["bittorrent"],"outboundTag":"direct"},{"type":"field","network":"tcp,udp","balancerTag":"auto"}]}},{"remarks":"Fixture B","outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[{"type":"field","ip":["198.51.100.0/24"],"outboundTag":"direct"}]}}]`
 

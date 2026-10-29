@@ -278,6 +278,7 @@ func (a *Application) refreshPreview(ctx context.Context, group string) (Subscri
 	}
 	d.Profiles = merged.Profiles
 	recordSubscriptionMetadata(&d, group, batch.Metadata)
+	recordImportedRouting(&d, group, batch)
 	changes := make([]SubscriptionChange, 0, merged.Added+merged.Updated+merged.Removed)
 	oldByID, newByID := map[string]Profile{}, map[string]Profile{}
 	for _, p := range original {
@@ -374,6 +375,7 @@ func (a *Application) apply(batch ImportResult, source, group string) (Applied, 
 		r.Removed = merged.Removed
 		d.SubscriptionSources[group] = source
 		recordSubscriptionMetadata(&d, group, batch.Metadata)
+
 	} else {
 		seen := map[string]bool{}
 		for _, p := range d.Profiles {
@@ -402,6 +404,7 @@ func (a *Application) apply(batch ImportResult, source, group string) (Applied, 
 			}
 		}
 	}
+	recordImportedRouting(&d, group, batch)
 	if e = a.Store.Save(d); e != nil {
 		return r, e
 	}
@@ -539,6 +542,7 @@ func (a *Application) Prepare(ctx context.Context, id string) (Applied, error) {
 	}
 	d.Profiles = merged.Profiles
 	recordSubscriptionMetadata(&d, selected.Group, batch.Metadata)
+	recordImportedRouting(&d, selected.Group, batch)
 	if e = a.Store.Save(d); e != nil {
 		return r, e
 	}
@@ -761,6 +765,10 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return refreshPresetDraft(ctx, r.NetworkInput)
 	case "network.presets.recommended":
 		return recommendedPresetDraft(ctx)
+	case "network.presets.sources":
+		return a.importedRoutingSources()
+	case "network.presets.select":
+		return a.selectImportedRouting(ctx, r.Group, r.ProviderRouting)
 	case "network.presets.provider":
 		return providerRoutingDraft(ctx, r.ProviderRouting)
 	case "network.rules.append":

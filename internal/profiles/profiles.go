@@ -35,10 +35,11 @@ type SubscriptionMetadata struct {
 	UpdatedAt string
 }
 type ImportResult struct {
-	Profiles   []Profile
-	Duplicates int
-	Skipped    int
-	Metadata   *SubscriptionMetadata
+	ImportedRouting json.RawMessage `json:",omitempty"`
+	Profiles        []Profile
+	Duplicates      int
+	Skipped         int
+	Metadata        *SubscriptionMetadata
 }
 type MergeResult struct {
 	Profiles []Profile
@@ -298,6 +299,7 @@ func ParseSubscription(payload string) (ImportResult, error) {
 		if !ok {
 			configs = []any{root}
 		}
+		r.ImportedRouting = subscriptionRoutingSnapshot(configs)
 		for _, item := range configs {
 			o, ok := item.(map[string]any)
 			if !ok {

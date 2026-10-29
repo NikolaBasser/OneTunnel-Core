@@ -249,6 +249,9 @@ func decodeBackupDocument(plain []byte) (doc Document, err error) {
 	if normalizeRoutingProfiles(&doc) != nil {
 		return doc, errBackupUnavailable
 	}
+	if normalizeImportedRouting(&doc) != nil {
+		return doc, errBackupUnavailable
+	}
 	if doc.FavoriteIDs == nil {
 		doc.FavoriteIDs = []string{}
 	}
