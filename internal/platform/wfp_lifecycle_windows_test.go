@@ -18,11 +18,17 @@ func TestWFPSessionBoundsWaitWithoutDynamicLifetime(t *testing.T) {
 		if name != "FwpmEngineOpen0" || len(args) != 5 || args[3] == 0 {
 			t.Fatal("explicit WFP session missing")
 		}
-		session := (*wSession)(unsafe.Pointer(args[3]))
+		var session wSession
+		if err := windows.ReadProcessMemory(windows.CurrentProcess(), args[3], (*byte)(unsafe.Pointer(&session)), unsafe.Sizeof(session), nil); err != nil {
+			t.Fatal(err)
+		}
 		if session.TransactionWaitMS != 5000 || session.Flags != 0 {
 			t.Fatalf("unbounded wait or dynamic filter lifetime: %+v", session)
 		}
-		*(*windows.Handle)(unsafe.Pointer(args[4])) = 123
+		result := windows.Handle(123)
+		if err := windows.WriteProcessMemory(windows.CurrentProcess(), args[4], (*byte)(unsafe.Pointer(&result)), unsafe.Sizeof(result), nil); err != nil {
+			t.Fatal(err)
+		}
 		return nil
 	})
 	if err != nil || h != 123 {
