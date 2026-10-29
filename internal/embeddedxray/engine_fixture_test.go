@@ -22,6 +22,47 @@ import (
 var portMu sync.Mutex
 var usedPorts = map[int]bool{}
 
+func TestUDPNoiseBeforeHysteriaHandshake(t *testing.T) {
+	server, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	local := freePort(t)
+	options := &protocol.TransportOptions{Noise: true, FragmentLength: "64", FragmentInterval: "0", NoiseLength: "53", NoiseDelay: "0", MuxConcurrency: 4}
+	plan, err := protocol.CompileWithOptions("hy2://fixture@"+server.LocalAddr().String()+"?sni=localhost", 4, false, freePort(t), local, "", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := Start([]byte(plan.Xray))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	dialer, err := proxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", local), nil, &net.Dialer{Timeout: 3 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		c, _ := dialer.Dial("tcp", "127.0.0.1:12345")
+		if c != nil {
+			c.Close()
+		}
+	}()
+	server.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buffer := make([]byte, 65535)
+	for i := 0; i < 8; i++ {
+		n, _, e := server.ReadFrom(buffer)
+		if e != nil {
+			t.Fatal("configured UDP noise never reached the socket", e)
+		}
+		if n == 53 {
+			return
+		}
+	}
+	t.Fatal("configured UDP noise length not observed")
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	portMu.Lock()

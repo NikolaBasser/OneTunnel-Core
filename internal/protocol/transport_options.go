@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// TransportOptions is a bounded, profile-local preference, never an imported
+// TransportOptions is a bounded runtime preference, never an imported
 // executable, arbitrary outbound chain, or a replacement routing policy.
 type TransportOptions struct {
 	Fragment          bool
@@ -46,7 +46,7 @@ func boundedRange(value string, min, max int) bool {
 	return true
 }
 
-func ValidateOptions(source string, kind int, o *TransportOptions) error {
+func ValidateTransportPreferences(o *TransportOptions) error {
 	if o == nil {
 		return nil
 	}
@@ -56,6 +56,16 @@ func ValidateOptions(source string, kind int, o *TransportOptions) error {
 	if !boundedRange(o.FragmentLength, 1, 1400) || !boundedRange(o.FragmentInterval, 0, 100) ||
 		!boundedRange(o.NoiseLength, 1, 1400) || !boundedRange(o.NoiseDelay, 0, 100) || o.MuxConcurrency < 1 || o.MuxConcurrency > 128 {
 		return ErrConfiguration
+	}
+	return nil
+}
+
+func ValidateOptions(source string, kind int, o *TransportOptions) error {
+	if o == nil {
+		return nil
+	}
+	if e := ValidateTransportPreferences(o); e != nil {
+		return e
 	}
 	if !o.Fragment && !o.Noise && !o.Mux {
 		return nil

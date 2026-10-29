@@ -25,6 +25,7 @@ type UserPreferences struct {
 	FullDevice     bool
 	AllowTrusted   bool
 	AllowPublic    bool
+	Transport      TransportInput `json:",omitzero"`
 }
 
 type UserSettingsView struct {
@@ -161,6 +162,15 @@ func normalizedUserPreferences(input *UserPreferences, doc Document) (*UserPrefe
 		return nil, nil
 	}
 	value := *input
+	if value.Transport != (TransportInput{}) {
+		options, err := value.Transport.Parse()
+		if err != nil || protocol.ValidateTransportPreferences(&options) != nil {
+			return nil, errors.New("Проверьте общие параметры фрагментации, шумов и MUX.")
+		}
+		if options.MuxMaxConnections == 0 && options.MuxMinStreams != 0 {
+			return nil, errors.New("Минимум потоков MUX задаётся вместе с ограничением числа соединений.")
+		}
+	}
 	value.ProfileID = strings.TrimSpace(value.ProfileID)
 	if value.ProfileID != "" && !favoriteProfileIDPattern.MatchString(value.ProfileID) {
 		return nil, errUserSettings

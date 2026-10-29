@@ -42,16 +42,36 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 		call = platform.CallService
 	}
 	request := control.Request{Version: control.Version, Command: command, Profile: p, FullDevice: full}
-	if command == "start" && p != nil && p.Reliability != nil && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks {
-		document, e := a.Store.Load()
-		if e != nil {
+	var transportSkipped []string
+	var transportDocument Document
+	if command == "start" && p != nil {
+		var err error
+		transportDocument, err = a.Store.Load()
+		if err != nil {
 			reply = a.desktopState
 			code := "profile_store_unavailable"
 			reply.Response.Error = &code
-			reply.Message = "Не удалось прочитать резервные профили"
+			reply.Message = "Не удалось прочитать общие настройки подключения."
 			return reply
 		}
-		for _, candidate := range document.Profiles {
+		effective, skipped, err := globalTransportProfile(*p, preferencesValue(transportDocument.UserSettings))
+		if err != nil {
+			reply = a.desktopState
+			code := "invalid_profile"
+			reply.Response.Error = &code
+			reply.Message = "Проверьте общие настройки фрагментации, шумов и MUX."
+			return reply
+		}
+		p = &effective
+		request.Profile = p
+		transportSkipped = skipped
+	}
+	if command == "start" && p != nil && p.Reliability != nil && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks {
+		for _, stored := range transportDocument.Profiles {
+			candidate, _, err := globalTransportProfile(stored, preferencesValue(transportDocument.UserSettings))
+			if err != nil {
+				continue
+			}
 			if candidate.ID != p.ID && candidate.Group == p.Group && control.CompatibleFallback(*p, candidate, full) && len(request.Fallbacks) < 8 {
 				request.Fallbacks = append(request.Fallbacks, candidate)
 			}
@@ -88,6 +108,9 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 		case "recover":
 			reply.Message = "Подключение очищено, блокировка kill switch снята. Обычная сеть восстановлена."
 		}
+	}
+	if command == "start" && response.Error == nil && len(transportSkipped) > 0 {
+		reply.Message += " Не применены к этому транспорту: " + strings.Join(transportSkipped, ", ") + "."
 	}
 	return reply
 }
