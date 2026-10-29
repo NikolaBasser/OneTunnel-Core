@@ -236,7 +236,7 @@ func (p *Pool) ListenPacketTo(ctx context.Context, address string) (net.PacketCo
 			p.record(e, 0, err)
 			continue
 		}
-		wrapped := &flowPacket{PacketConn: c, p: p, target: address}
+		wrapped := &flowPacket{PacketConn: c, p: p, covers: e.Covers}
 		if !p.track(wrapped) {
 			c.Close()
 			return nil, net.ErrClosed
@@ -296,14 +296,14 @@ func (c *flowConn) Close() error {
 type flowPacket struct {
 	net.PacketConn
 	p      *Pool
-	target string
+	covers func(string, string) bool
 	once   sync.Once
 	err    error
 }
 
 func (c *flowPacket) WriteTo(b []byte, a net.Addr) (int, error) {
-	if a == nil || a.String() != c.target {
-		return 0, errors.New("UDP flow destination changed")
+	if a == nil || !c.covers("udp", a.String()) {
+		return 0, errors.New("UDP destination outside selected member coverage")
 	}
 	return c.PacketConn.WriteTo(b, a)
 }
