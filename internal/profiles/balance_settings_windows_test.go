@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"github.com/NikolaBasser/OneTunnel-Core/internal/control"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 	"strings"
 	"testing"
 )
@@ -51,5 +52,31 @@ func TestBalanceSettingsSnapshotAcrossGroups(t *testing.T) {
 	pool, err = settings.snapshot(doc)
 	if err != nil || len(pool.Members) != 4 {
 		t.Fatal("automatic snapshot did not include new library member", err)
+	}
+}
+
+func TestNativeRoutingModeRequestKeepsStoredSource(t *testing.T) {
+	p := managementProfile(t, "11111111-1111-4111-8111-111111111111", "WG", "Native")
+	p.Protocol = 1
+	p.Source = strings.Replace(nativePreferencesSource(1), "0.0.0.0/0", "172.16.0.0/24", 1)
+	p.Network = &protocol.NetworkOptions{AllowLAN: true}
+	doc := Document{Profiles: []Profile{p}, UserSettings: &UserPreferences{Balance: BalanceInput{Enabled: true, Mode: "balanced", Best: 8, Interval: 30, MaxRTT: 1500}}}
+	store := managementStore(t, doc)
+	var requests []control.Request
+	app := &Application{Store: store, ServiceCall: func(_ context.Context, r control.Request) (control.Response, int64, error) {
+		requests = append(requests, r)
+		return control.Response{Version: 1}, 0, nil
+	}}
+	app.desktopCall(context.Background(), "start", &p, false)
+	app.desktopCall(context.Background(), "start", &p, true)
+	if len(requests) != 2 || requests[0].Balance != nil || requests[0].Profile.Network != nil || requests[0].Profile.Source != p.Source {
+		t.Fatal("AllowedIPs mode did not retain native config")
+	}
+	if requests[1].Balance == nil || requests[1].Profile.Network == nil || requests[1].Profile.Source != p.Source {
+		t.Fatal("settings mode lost pool/policy or rewrote saved source")
+	}
+	saved, _ := store.Load()
+	if saved.Profiles[0].Source != p.Source || saved.Profiles[0].Network == nil {
+		t.Fatal("stored source or policy changed")
 	}
 }

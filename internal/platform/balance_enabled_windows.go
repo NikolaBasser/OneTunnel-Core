@@ -239,7 +239,7 @@ func (r *Runtime) buildBalanceNode(ctx context.Context, p control.Profile) (bala
 }
 
 func (r *Runtime) startBalanceRouter(ctx context.Context, b *control.Balance, data []byte, full bool) (interface{ Close() error }, error) {
-	return r.startBalanceRouterWithProbe(ctx, b, data, full, "")
+	return r.startBalanceRouterWithProbe(ctx, b, data, full, r.balanceProbeIP)
 }
 func (r *Runtime) startBalanceRouterWithProbe(ctx context.Context, b *control.Balance, data []byte, full bool, probeIP string) (interface{ Close() error }, error) {
 	var probeMu sync.Mutex
@@ -259,6 +259,16 @@ func (r *Runtime) startBalanceRouterWithProbe(ctx context.Context, b *control.Ba
 	nativePlans := []*embeddedawg.Plan{}
 	for _, member := range b.Members {
 		p := member
+		if full && p.Protocol < 2 {
+			var err error
+			p.Source, err = protocol.FullNativeRoutingSource(p.Source, p.Protocol)
+			if err != nil {
+				if b.Automatic {
+					continue
+				}
+				return nil, err
+			}
+		}
 		covers := func(network, address string) bool {
 			_, e := netip.ParseAddrPort(address)
 			return e == nil && (network == "tcp" || network == "udp" && p.Protocol != protocol.HTTP && p.Protocol != protocol.Naive)

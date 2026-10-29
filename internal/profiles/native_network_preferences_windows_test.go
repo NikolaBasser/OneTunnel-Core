@@ -82,7 +82,7 @@ func TestNativeNetworkPreferencesSaveCopyAndBackupPreserveSource(t *testing.T) {
 	}
 }
 
-func TestNativeNetworkPreferencesRejectUnreachableDNSAndStaleToken(t *testing.T) {
+func TestNativeNetworkPreferencesExpandRuntimeRoutesAndRejectStaleToken(t *testing.T) {
 	for _, kind := range []int{0, 1} {
 		t.Run(protocol.Names[kind], func(t *testing.T) {
 			profile := managementProfile(t, "11111111-1111-4111-8111-111111111111", "Restricted native", "Manual")
@@ -94,11 +94,15 @@ func TestNativeNetworkPreferencesRejectUnreachableDNSAndStaleToken(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			before := storeBytes(t, store)
 			_, err = app.saveNetworkPreferences(Request{ID: profile.ID, Token: view.Token, NetworkInput: &NetworkInput{Mode: "https", ServerIP: "8.8.8.8", ServerName: "resolver.example", AllowLAN: true}})
-			if err == nil || !reflect.DeepEqual(before, storeBytes(t, store)) {
-				t.Fatal("unreachable policy DNS was saved")
+			if err != nil {
+				t.Fatal("policy DNS outside imported routes must use expanded runtime copy", err)
 			}
+			doc, _ := store.Load()
+			if doc.Profiles[0].Source != profile.Source {
+				t.Fatal("saved source changed")
+			}
+			before := storeBytes(t, store)
 
 			_, err = app.saveNetworkPreferences(Request{ID: profile.ID, Token: "stale-token", NetworkInput: &NetworkInput{Mode: "https", ServerIP: "10.0.0.1", ServerName: "resolver.example", AllowLAN: true}})
 			if err == nil || !reflect.DeepEqual(before, storeBytes(t, store)) {

@@ -65,7 +65,15 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 		p = &effective
 		request.Profile = p
 		transportSkipped = skipped
-		pool, err := preferencesValue(transportDocument.UserSettings).Balance.snapshot(transportDocument)
+		if p.Protocol < 2 && !full {
+			effective.Network = nil
+			p = &effective
+			request.Profile = p
+		}
+		var pool *control.Balance
+		if p.Protocol >= 2 || full {
+			pool, err = preferencesValue(transportDocument.UserSettings).Balance.snapshot(transportDocument)
+		}
 		if err != nil {
 			reply = a.desktopState
 			code := "invalid_configuration"
@@ -85,6 +93,9 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 			candidate, _, err := globalTransportProfile(stored, preferencesValue(transportDocument.UserSettings))
 			if err != nil {
 				continue
+			}
+			if candidate.Protocol < 2 && !full {
+				candidate.Network = nil
 			}
 			if candidate.ID != p.ID && candidate.Group == p.Group && control.CompatibleFallback(*p, candidate, full) && len(request.Fallbacks) < 8 {
 				request.Fallbacks = append(request.Fallbacks, candidate)
@@ -299,7 +310,7 @@ type ProfileView struct {
 
 func profileView(kind int) ProfileView {
 	if kind == 0 || kind == 1 {
-		return ProfileView{"По конфигурации · маршруты из AllowedIPs", "Маршрутизация из конфигурации", "Полные маршруты создаются временно; сохранённый профиль не меняется.", "Используются AllowedIPs из профиля. Частичные маршруты не защищают весь трафик устройства.", "Полные маршруты применяются временно. Kill switch сохраняет блокировку при обрыве. Отключение возвращает обычную сеть."}
+		return ProfileView{"Маршрутизация из AllowedIPs", "Маршрутизация из конфигурации", "Маршрутизация по настройкам использует временную копию с полными AllowedIPs; сохранённый профиль не меняется.", "Используются исходные AllowedIPs и DNS профиля. Сохранённые правила и общий балансировщик в этом режиме не применяются.", "В рабочей копии разрешён весь трафик поддерживаемых семейств IP. DNS, пресеты и свои правила определяют маршруты. Отключение возвращает обычную сеть."}
 	}
 	if kind == protocol.HTTP || kind == protocol.Naive {
 		return ProfileView{"Локальный прокси · TCP", "Режим подключения", "HTTP CONNECT и NaiveProxy передают TCP. UDP не отправляется напрямую; DNS в режиме всего устройства идёт через защищённый HTTPS-транспорт.", "HTTP(S): http://user:password@host:port или https://user:password@host:port. NaiveProxy: naive+https://user:password@host:port. Прокси без авторизации: явно укажи порт. Для подписки используй полный URL ресурса.", "TCP направляется через туннель; UDP блокируется. Kill switch сохраняет защиту при обрыве. Явное отключение возвращает обычную сеть."}

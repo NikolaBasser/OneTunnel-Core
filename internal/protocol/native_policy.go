@@ -3,14 +3,79 @@ package protocol
 import (
 	"encoding/json"
 	"net/netip"
+	"regexp"
 	"strings"
 )
+
+// FullNativeRoutingSource returns a validated runtime copy, never a store edit.
+// Policy DNS is supplied separately, so imported DNS is optional here.
+func FullNativeRoutingSource(source string, kind int) (string, error) {
+	if kind != 0 && kind != 1 {
+		return "", ErrConfiguration
+	}
+	copy, err := tunnel(strings.TrimSpace(source), kind, false)
+	if err != nil {
+		return "", err
+	}
+	var routes []string
+	peers := 0
+	defaults := map[string]bool{}
+	for _, line := range strings.Split(copy, "\n") {
+		key, value, ok := strings.Cut(strings.SplitN(line, "#", 2)[0], "=")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "AllowedIPs") {
+			peers++
+			for _, raw := range strings.Split(value, ",") {
+				prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+				if err != nil {
+					return "", ErrConfiguration
+				}
+				defaults[prefix.Masked().String()] = true
+			}
+		}
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "Address") {
+			continue
+		}
+		v4, v6 := false, false
+		for _, raw := range strings.Split(value, ",") {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+			if err != nil {
+				return "", ErrConfiguration
+			}
+			v4 = v4 || prefix.Addr().Is4()
+			v6 = v6 || prefix.Addr().Is6()
+		}
+		if v4 {
+			routes = append(routes, "0.0.0.0/0")
+		}
+		if v6 {
+			routes = append(routes, "::/0")
+		}
+	}
+	if len(routes) == 0 {
+		return "", ErrConfiguration
+	}
+	// A multi-peer config must already name the owner of each default route.
+	if peers > 1 {
+		for _, route := range routes {
+			if !defaults[route] {
+				return "", ErrConfiguration
+			}
+		}
+		return copy, nil
+	}
+	re := regexp.MustCompile(`(?mi)^([ \t]*AllowedIPs[ \t]*=)[^\r\n]+`)
+	return re.ReplaceAllString(copy, "${1} "+strings.Join(routes, ", ")), nil
+}
 
 func nativePolicyPlan(source string, kind, localPort int, transport *TransportOptions, network *NetworkOptions) (Plan, error) {
 	if localPort < 1 || localPort > 65535 {
 		return Plan{}, ErrConfiguration
 	}
 	p, err := CompileWithOptions(source, kind, false, localPort, 0, "", transport)
+	if err != nil {
+		return Plan{}, err
+	}
+	p.NativeSource, err = FullNativeRoutingSource(p.NativeSource, kind)
 	if err != nil {
 		return Plan{}, err
 	}

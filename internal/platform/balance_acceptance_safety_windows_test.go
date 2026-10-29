@@ -63,36 +63,50 @@ func balanceTestNative(t *testing.T, kind int, label string, internet ...string)
 	probeIP := ""
 	if len(internet) > 0 && internet[0] != "" {
 		probeIP = internet[0]
-		addresses = append(addresses, netip.MustParseAddr(probeIP))
+		addresses = append(addresses, netip.MustParseAddr(probeIP), netip.MustParseAddr("1.1.1.1"))
 	}
 	device, stack, e := netstack.CreateNetTUN(addresses, nil, 1420)
 	if e != nil {
 		t.Fatal(e)
 	}
 	if probeIP != "" {
-		listener, e := stack.ListenTCPAddrPort(netip.AddrPortFrom(netip.MustParseAddr(probeIP), 443))
-		if e != nil {
-			t.Fatal(e)
-		}
-		t.Cleanup(func() { listener.Close() })
-		go func() {
-			for {
-				client, err := listener.Accept()
-				if err != nil {
-					return
-				}
-				go func() {
-					defer client.Close()
-					upstream, err := net.DialTimeout("tcp", net.JoinHostPort(probeIP, "443"), 4*time.Second)
+		physical := &Runtime{}
+		physical.captureQualityUplinks()
+		for _, forwardIP := range []string{probeIP, "1.1.1.1"} {
+			listener, e := stack.ListenTCPAddrPort(netip.AddrPortFrom(netip.MustParseAddr(forwardIP), 443))
+			if e != nil {
+				t.Fatal(e)
+			}
+			t.Cleanup(func() { listener.Close() })
+			go func() {
+				for {
+					client, err := listener.Accept()
 					if err != nil {
 						return
 					}
-					defer upstream.Close()
-					go func() { io.Copy(upstream, client); upstream.Close() }()
-					io.Copy(client, upstream)
-				}()
-			}
-		}()
+					go func() {
+						defer client.Close()
+						name, err := physical.qualityInterface(forwardIP)
+						if err != nil {
+							return
+						}
+						dialer, err := interfaceDialer(name)
+						if err != nil {
+							return
+						}
+						ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+						upstream, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(forwardIP, "443"))
+						cancel()
+						if err != nil {
+							return
+						}
+						defer upstream.Close()
+						go func() { io.Copy(upstream, client); upstream.Close() }()
+						io.Copy(client, upstream)
+					}()
+				}
+			}()
+		}
 	}
 	engine, e := embeddedawg.Start(plan, device, conn.NewStdNetBind())
 	if e != nil {

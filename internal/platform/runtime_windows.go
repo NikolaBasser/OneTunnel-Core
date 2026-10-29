@@ -50,6 +50,7 @@ type Runtime struct {
 	front                *proxyFront
 	backendPort          int
 	qualityUplink        map[bool]string
+	balanceProbeIP       string // optional pinned, securely resolved measurement target
 	forceSecureBootstrap bool
 	bootstrapIPs         map[string]string
 	retry                retryState

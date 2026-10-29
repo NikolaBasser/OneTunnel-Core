@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,13 +47,22 @@ func TestBalanceLiveSharedTUN(t *testing.T) {
 	if root == "" || owner == "" {
 		t.Fatal("independent recovery identity required")
 	}
-	wg, _ := balanceTestNative(t, 1, "wg")
-	awg, _ := balanceTestNative(t, 0, "awg")
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	probeIP, err := (&Runtime{}).secureQualityBootstrap(probeCtx, "www.gstatic.com")
+	probeCancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg, _ := balanceTestNative(t, 1, "wg", probeIP)
+	awg, _ := balanceTestNative(t, 0, "awg", probeIP)
+	wg.Source = strings.Replace(wg.Source, "AllowedIPs = 0.0.0.0/0", "AllowedIPs = 172.16.0.0/24", 1)
+	awg.Source = strings.Replace(awg.Source, "AllowedIPs = 0.0.0.0/0", "AllowedIPs = 172.16.0.0/24", 1)
 	r, e := NewSafetyTestRuntime(t.TempDir(), owner, root, func(control.State) {})
 	if e != nil {
 		t.Fatal(e)
 	}
 	r.captureQualityUplinks()
+	r.balanceProbeIP = probeIP
 	r.forceSecureBootstrap = true
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -109,6 +119,7 @@ func TestBalanceLiveSharedTUN(t *testing.T) {
 	p := control.Profile{ID: "33333333-3333-4333-8333-333333333333", Name: "proxy", Group: "manual", Protocol: 6, Source: "http://" + gateway.address}
 	wg.Reliability = &control.ReliabilityOptions{AutoReconnect: true}
 	request := control.Request{Version: 1, Command: "start", Profile: &wg, FullDevice: true, Balance: &control.Balance{Mode: "balanced", Best: 3, Interval: 30, MaxRTT: 10000, Members: []control.Profile{func() control.Profile { p := wg; p.Reliability = nil; return p }(), awg, p}}}
+	request.Balance.Automatic = true
 	if code := control.Validate(request); code != "" {
 		t.Fatal(code)
 	}
@@ -142,6 +153,9 @@ func TestBalanceLiveSharedTUN(t *testing.T) {
 	}
 	if len(seen) != 3 {
 		t.Fatal("actual TUN did not distribute all protocols", seen)
+	}
+	if !strings.Contains(wg.Source, "AllowedIPs = 172.16.0.0/24") || !strings.Contains(awg.Source, "AllowedIPs = 172.16.0.0/24") {
+		t.Fatal("original native sources changed")
 	}
 	for i := 0; i < 2; i++ {
 		c, e := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP("10.77.0.1"), Port: 19091})

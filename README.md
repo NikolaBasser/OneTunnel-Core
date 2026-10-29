@@ -142,8 +142,9 @@ rules choose proxy, direct or reject; unmatched traffic stays proxied. Direct ru
 are intentional exceptions to VPN routing, not an automatic LAN bypass. Custom
 DoH/DoT/DoQ/DoH3 use literal resolver IPs, verified TLS identity and proxy detours. Upstream
 server-name bootstrap uses the fixed encrypted infrastructure path, separately
-from the custom tunneled resolver. Native AWG/WG with empty preferences retain imported DNS/AllowedIPs;
-nonempty full-device policies use the shared TUN; local mode is rejected. A matching new
+from the custom tunneled resolver. Native AWG/WG AllowedIPs mode retains imported DNS/routes
+and bypasses saved policy and the shared pool. Nonempty settings-routing policies
+use a temporary full-route native copy and the shared TUN. A matching new
 service build is required; an old strict service refuses unsupported fields.
 Whole-device startup refreshes the interface snapshot before becoming ready so
 executable-path rules apply to the first TUN connection.
@@ -455,7 +456,9 @@ The complete Windows bundle supports a shared per-connection server pool through
 Members may come from unrelated subscriptions/manual groups. Their individual
 network policies and recovery settings are excluded; primary profile policy is
 applied once by the outer router. Native WG/AWG use isolated userspace transports
-and retain AllowedIPs/address families. Duplicate native peer identities fail
+and retain address families. In full-device/settings-routing mode native members
+use temporary full-route copies; proxy-only API pools retain imported AllowedIPs.
+Duplicate native peer identities fail
 closed. Proxy transports are physically bound before the shared TUN starts.
 TCP connections and UDP destination sessions stay on one member. New flows rank
 recent HTTPS samples by median, spread and failures; balanced mode rotates the
@@ -463,7 +466,7 @@ best subset, with remaining eligible members retained as immediate reserves.
 All-down never enables a direct fallback. Explicit primary direct/LAN rules still
 apply. Node probes and restart are independent of subscription refresh; membership
 is a fixed snapshot until reconnect. Established TCP cannot migrate after failure.
-Limited-route native peers that cannot cover the common probe remain explicitly
+In proxy-only pools, limited-route native peers that cannot cover the common probe remain explicitly
 unmeasured, use only covered destinations, and retry failed dials after cooldown.
 State.BalanceStatus distinguishes confirmed probes from unmeasured candidates.
 The profile host persists comparable `UserSettings.Balance` values; deleting a
@@ -476,7 +479,7 @@ temporary engines probe concurrently; each full round precedes the next. Ranking
 uses median HTTPS delay, spread and failed-response ratio. At least two successful
 samples are required; up to eight measured members remain, with temporary engines
 closed before the live pool starts. The HTTPS address is securely resolved once
-per pool, so servers share the same measurement target. Restricted native peers
+per pool, so servers share the same measurement target. Proxy-only restricted native peers
 without probe coverage and duplicate native peer aliases are excluded from
 automatic composition. Manual composition retains the explicit 2–8 member list.
 No measured member means connection failure, with no direct fallback. Automatic

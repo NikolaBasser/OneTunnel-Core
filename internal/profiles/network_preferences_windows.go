@@ -261,7 +261,7 @@ func (a *Application) networkPreferencesView(id string) (NetworkPreferencesView,
 		if !view.Supported {
 			view.Message = "Network preferences require a supported full-device profile."
 		} else if profile.Protocol < 2 {
-			view.Message = "Nonempty preferences use the shared TUN for TCP/UDP in full-device mode. Policy DNS replaces imported DNS; peer AllowedIPs are preserved. ICMP is unavailable in this mode. Reset all preferences to restore the native path."
+			view.Message = "Nonempty preferences use the shared TUN for TCP/UDP in settings-routing mode. Policy DNS replaces imported DNS; a temporary WG/AWG copy uses full AllowedIPs for supported address families. The imported source is unchanged. AllowedIPs mode uses the original source and ignores this policy and the shared pool. ICMP is unavailable in the shared TUN."
 		}
 		return view, nil
 	}
