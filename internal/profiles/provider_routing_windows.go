@@ -295,7 +295,7 @@ func parseProviderRouting(ctx context.Context, content []byte, input ProviderRou
 	if c.Routing.DomainStrategy != "" && c.Routing.DomainStrategy != "AsIs" {
 		result.Warnings = append(result.Warnings, "Стратегия разрешения доменов провайдера не переносится; используется DNS OneTunnel.")
 	}
-	result.Warnings = append(result.Warnings, "DNS, входящие подключения и серверы подписки не импортируются. Действие VPN использует выбранный сервер OneTunnel; несовпавший трафик также идёт через него.")
+	result.Warnings = append(result.Warnings, "Выбор маршрутизации не заменяет сервер и DNS текущего профиля. Действие VPN использует выбранный сервер OneTunnel; несовпавший трафик также идёт через него.")
 	source := presetSource{Name: "provider-source", Format: "provider-xray", URL: input.URL, Index: input.Index, Label: result.Profiles[input.Index].Label, Warnings: result.Warnings}
 	draft := presetDraftResult(n, []presetSource{source}, len(n.Rules))
 	result.Draft = &draft
