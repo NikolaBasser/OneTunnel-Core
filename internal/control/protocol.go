@@ -33,6 +33,7 @@ type Profile struct {
 	Label       string                     `json:"Label,omitempty"`
 }
 type Request struct {
+	Balance    *Balance  `json:",omitempty"`
 	Fallbacks  []Profile `json:"Fallbacks,omitempty"`
 	Version    int       `json:"Version"`
 	Command    string    `json:"Command"`
@@ -40,6 +41,7 @@ type Request struct {
 	FullDevice bool      `json:"FullDevice"`
 }
 type State struct {
+	BalanceStatus       string                `json:",omitempty"`
 	ProxyListenerStable bool                  `json:"ProxyListenerStable,omitempty"`
 	Reconnecting        bool                  `json:"Reconnecting,omitempty"`
 	ReconnectAttempt    int                   `json:"ReconnectAttempt,omitempty"`
@@ -71,6 +73,9 @@ type BackendResult struct {
 }
 
 func Validate(r Request) string {
+	if !ValidateBalance(r.Balance) || (r.Balance != nil && (r.Command != "start" || len(r.Fallbacks) != 0)) {
+		return "invalid_request"
+	}
 	if r.Version != Version {
 		return "incompatible_version"
 	}
@@ -98,6 +103,15 @@ func Validate(r Request) string {
 			return "invalid_configuration"
 		}
 		policyMode := r.FullDevice || r.Command == "check-profile"
+		if r.Balance != nil {
+			seen := map[string]bool{}
+			for _, member := range r.Balance.Members {
+				if seen[member.ID] || member.Network != nil || member.Reliability != nil || Validate(Request{Version: Version, Command: "start", Profile: &member}) != "" {
+					return "invalid_configuration"
+				}
+				seen[member.ID] = true
+			}
+		}
 		if protocol.ValidateNetworkOptions(p.Network, p.Protocol, policyMode) != nil {
 			return "invalid_configuration"
 		}

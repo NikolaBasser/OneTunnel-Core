@@ -79,6 +79,11 @@ func (d *nativeLiteralDialer) ListenPacket(ctx context.Context, destination M.So
 	if _, err := literalNativeAddress(destination); err != nil {
 		return nil, err
 	}
+	if pool, ok := d.transport.(interface {
+		ListenPacketTo(context.Context, string) (net.PacketConn, error)
+	}); ok {
+		return pool.ListenPacketTo(ctx, destination.String())
+	}
 	// The transport address is the local bind address, not the remote target.
 	// The resolved destination remains in sing-box metadata and is supplied to
 	// PacketConn.WriteTo by the caller.

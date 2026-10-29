@@ -26,6 +26,7 @@ type UserPreferences struct {
 	AllowTrusted   bool
 	AllowPublic    bool
 	Transport      TransportInput `json:",omitzero"`
+	Balance        BalanceInput   `json:",omitzero"`
 }
 
 type UserSettingsView struct {
@@ -162,6 +163,9 @@ func normalizedUserPreferences(input *UserPreferences, doc Document) (*UserPrefe
 		return nil, nil
 	}
 	value := *input
+	if _, err := value.Balance.snapshot(doc); err != nil {
+		return nil, err
+	}
 	if value.Transport != (TransportInput{}) {
 		options, err := value.Transport.Parse()
 		if err != nil || protocol.ValidateTransportPreferences(&options) != nil {
@@ -214,6 +218,7 @@ func normalizeStoredUserPreferences(input *UserPreferences, doc Document) *UserP
 	value := *input
 	if _, err := normalizedUserPreferences(&value, doc); err != nil {
 		value.AutoConnect = false
+		value.Balance.Enabled = false
 	}
 	if value == (UserPreferences{}) {
 		return nil

@@ -65,8 +65,22 @@ func (a *Application) desktopCall(ctx context.Context, command string, p *Profil
 		p = &effective
 		request.Profile = p
 		transportSkipped = skipped
+		pool, err := preferencesValue(transportDocument.UserSettings).Balance.snapshot(transportDocument)
+		if err != nil {
+			reply = a.desktopState
+			code := "invalid_configuration"
+			reply.Response.Error = &code
+			reply.Message = err.Error()
+			return reply
+		}
+		if pool != nil {
+			request.Balance = pool
+			effective.Reliability = &control.ReliabilityOptions{AutoReconnect: true}
+			p = &effective
+			request.Profile = p
+		}
 	}
-	if command == "start" && p != nil && p.Reliability != nil && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks {
+	if request.Balance == nil && command == "start" && p != nil && p.Reliability != nil && p.Reliability.AutoReconnect && p.Reliability.UseFallbacks {
 		for _, stored := range transportDocument.Profiles {
 			candidate, _, err := globalTransportProfile(stored, preferencesValue(transportDocument.UserSettings))
 			if err != nil {

@@ -448,3 +448,23 @@ and permitted processes are unchanged.
 `network.presets.recommended` downloads geosite.dat + geoip.dat as one atomic preset draft: advertising reject first, category-ru domains direct, RU IP ranges direct, default proxy. It replaces only the preset bank when explicitly saved; custom rules are separate.
 
 
+
+The complete Windows bundle supports a shared per-connection server pool through
+`Request.Balance` (`Mode`: best/balanced, `Best`: 1..member count, `Interval`:
+15..300 seconds, `MaxRTT`: 100..10000 ms, `Members`: 2..8 credential snapshots).
+Members may come from unrelated subscriptions/manual groups. Their individual
+network policies and recovery settings are excluded; primary profile policy is
+applied once by the outer router. Native WG/AWG use isolated userspace transports
+and retain AllowedIPs/address families. Duplicate native peer identities fail
+closed. Proxy transports are physically bound before the shared TUN starts.
+TCP connections and UDP destination sessions stay on one member. New flows rank
+recent HTTPS samples by median, spread and failures; balanced mode rotates the
+best subset, with remaining eligible members retained as immediate reserves.
+All-down never enables a direct fallback. Explicit primary direct/LAN rules still
+apply. Node probes and restart are independent of subscription refresh; membership
+is a fixed snapshot until reconnect. Established TCP cannot migrate after failure.
+Limited-route native peers that cannot cover the common probe remain explicitly
+unmeasured, use only covered destinations, and retry failed dials after cooldown.
+State.BalanceStatus distinguishes confirmed probes from unmeasured candidates.
+The profile host persists comparable `UserSettings.Balance` values; deleting a
+selected member disables the saved pool rather than silently selecting another.

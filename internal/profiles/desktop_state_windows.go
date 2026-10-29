@@ -145,6 +145,10 @@ func (a *Application) projectDesktop(reply DesktopReply, env Environment) Deskto
 		if s.TrafficLocked {
 			display.ConnectionHint = "Kill switch включён. Закрытие окна сохраняет подключение; явное отключение возвращает обычную сеть."
 		}
+		if s.BalanceStatus != "" {
+			display.ConnectionInfo += " · общий пул"
+			display.ConnectionHint = s.BalanceStatus + ". " + display.ConnectionHint
+		}
 	}
 	if s.NeedsRecovery || s.TrafficLocked && !s.Active || env.NeedsRecovery {
 		display.RecoveryHint = "Незавершённое подключение. Доступно восстановление собственного сетевого состояния."

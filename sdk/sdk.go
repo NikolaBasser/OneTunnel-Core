@@ -29,6 +29,7 @@ type RouteQuery = protocol.RouteQuery
 type RoutePrediction = protocol.RoutePrediction
 type PolicyAnalysis = protocol.PolicyAnalysis
 type ReliabilityOptions = control.ReliabilityOptions
+type Balance = control.Balance
 type Request = control.Request
 type Response = control.Response
 type State = control.State

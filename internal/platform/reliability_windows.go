@@ -12,6 +12,7 @@ import (
 )
 
 type retryState struct {
+	balance           *control.Balance
 	targets           []control.Profile
 	full              bool
 	attempt, failures int
@@ -29,7 +30,8 @@ func (r *Runtime) armRetry(request control.Request) {
 		r.retry.targets = append(r.retry.targets, request.Fallbacks...)
 	}
 	r.retry.full = request.FullDevice
-	if qualityEligible(*request.Profile, request.FullDevice) {
+	r.retry.balance = request.Balance
+	if request.Balance == nil && qualityEligible(*request.Profile, request.FullDevice) {
 		r.retry.quality = &qualitySelection{held: time.Now(), samples: map[string][]qualitySample{}}
 	}
 	r.retry.next = time.Now().Add(20 * time.Second)
@@ -130,7 +132,7 @@ func (r *Runtime) maintainConnectionWith(effects retryEffects) {
 		index = preferred
 	}
 	target := r.retry.targets[index]
-	request := control.Request{Version: 1, Command: "start", Profile: &target, FullDevice: r.retry.full}
+	request := control.Request{Version: 1, Command: "start", Profile: &target, FullDevice: r.retry.full, Balance: r.retry.balance}
 	err := ctx.Err()
 	if err == nil {
 		err = effects.start(ctx, request)

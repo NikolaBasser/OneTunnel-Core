@@ -82,6 +82,22 @@ func StartWithNativeTransport(data []byte, wholeDevice bool, transport NativeTra
 	return engine, err
 }
 
+// A generated pool router can also expose a local mixed listener without TUN.
+func StartWithPoolTransport(data []byte, wholeDevice bool, transport NativeTransport) (*Engine, error) {
+	if transport == nil {
+		return nil, errors.New("pool transport required")
+	}
+	if _, err := checkNativePlaceholder(data, true); err != nil {
+		_ = transport.Close()
+		return nil, err
+	}
+	engine, err := start(data, wholeDevice, transport)
+	if err != nil {
+		_ = transport.Close()
+	}
+	return engine, err
+}
+
 func start(data []byte, wholeDevice bool, native NativeTransport) (*Engine, error) {
 	in, out := inbound.NewRegistry(), outbound.NewRegistry()
 	registerTun(in)
@@ -217,6 +233,13 @@ func (e *Engine) NativeHealth(ctx context.Context) error {
 		return errors.New("native policy DNS check returned an invalid response")
 	}
 	return nil
+}
+
+func (e *Engine) BalanceSummary() string {
+	if pool, ok := e.native.(interface{ Summary() string }); ok {
+		return pool.Summary()
+	}
+	return ""
 }
 
 // Validate constructs and closes an instance without starting listeners, TUN,

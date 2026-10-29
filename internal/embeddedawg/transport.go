@@ -138,6 +138,17 @@ func (t *Transport) covers(addr netip.Addr) bool {
 	return false
 }
 
+func (t *Transport) CoversAddress(address string) bool {
+	a, e := parseLiteralAddrPort(address)
+	return e == nil && t.covers(a.Addr())
+}
+func (t *Transport) ListenPacketTo(ctx context.Context, address string) (net.PacketConn, error) {
+	if !t.CoversAddress(address) {
+		return nil, errors.New("destination outside AllowedIPs")
+	}
+	return t.ListenPacket(ctx, "udp", "")
+}
+
 func (t *Transport) register(flow ioCloser) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -174,6 +174,10 @@ func (r *Runtime) publish(status string) {
 	r.state.TrafficLocked = r.lock.needed()
 	r.state.Reconnecting = r.retrying
 	r.state.ReconnectAttempt = r.retry.attempt
+	r.state.BalanceStatus = ""
+	if pool, ok := r.embeddedProxy.(interface{ BalanceSummary() string }); ok {
+		r.state.BalanceStatus = pool.BalanceSummary()
+	}
 	if status != "" {
 		r.state.Status = status
 	}
@@ -257,7 +261,7 @@ func (r *Runtime) Call(ctx context.Context, request control.Request) (control.Ba
 		r.bootstrapIPs = map[string]string{}
 		e = r.start(ctx, request)
 		if e == nil {
-			if qualityEligible(*request.Profile, request.FullDevice) && !request.FullDevice && request.Profile.Protocol >= 2 {
+			if (request.Balance != nil || qualityEligible(*request.Profile, request.FullDevice)) && !request.FullDevice && (request.Balance != nil || request.Profile.Protocol >= 2) {
 				r.front, e = newProxyFront()
 				if e == nil {
 					r.stateMu.Lock()
@@ -587,15 +591,16 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		return protocol.ErrConfiguration
 	}
 	p := request.Profile
-	if qualityEligible(*p, request.FullDevice) {
+	balanced := request.Balance != nil
+	if balanced || qualityEligible(*p, request.FullDevice) {
 		r.captureQualityUplinks()
 	}
 	if err = protocol.CheckEngineCompatibility(p.Source, p.Protocol); err != nil {
 		return err
 	}
-	sharedNative := p.Protocol < 2 && request.FullDevice && !protocol.NetworkOptionsEmpty(p.Network)
+	sharedNative := !balanced && p.Protocol < 2 && request.FullDevice && !protocol.NetworkOptionsEmpty(p.Network)
 	local, bridge := 0, 0
-	if p.Protocol >= 2 || sharedNative {
+	if balanced || p.Protocol >= 2 || sharedNative {
 		local, err = freePort()
 		if err != nil {
 			return err
@@ -617,7 +622,12 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 	if err != nil {
 		return err
 	}
-	plan, err := protocol.CompileWithNetwork(p.Source, p.Protocol, request.FullDevice, local, bridge, xrayIdentity, p.Transport, p.Network)
+	var plan protocol.Plan
+	if balanced {
+		plan, err = protocol.CompileBalanced(request.FullDevice, local, p.Network)
+	} else {
+		plan, err = protocol.CompileWithNetwork(p.Source, p.Protocol, request.FullDevice, local, bridge, xrayIdentity, p.Transport, p.Network)
+	}
 	if err != nil {
 		return err
 	}
@@ -637,7 +647,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		}
 	}
 	engine := r.enginePath(p.Protocol)
-	if sharedNative {
+	if sharedNative || balanced {
 		engine = r.enginePath(2)
 	}
 	if (p.Protocol < 2 && !embeddedAWGEnabled()) || (p.Protocol >= 2 && !embeddedSingBoxAllowed(request.FullDevice, plan.AccurateTime)) {
@@ -650,7 +660,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			return err
 		}
 	}
-	native := p.Protocol < 2 && !sharedNative
+	native := !balanced && p.Protocol < 2 && !sharedNative
 	tunnel := "OneTunnel" + strings.ReplaceAll(strings.ToLower(p.ID), "-", "")[:12]
 	extension := ".json"
 	kind := "proxy"
@@ -818,7 +828,7 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		}
 		if request.FullDevice || r.forceSecureBootstrap {
 			jObject(c["log"])["level"] = "info"
-			if !plan.NeedsXray && !sharedNative {
+			if !plan.NeedsXray && !sharedNative && !balanced {
 				out := first(c["outbounds"])
 				out["server"], err = resolveEndpoint(ctx, jString(out["server"]))
 				if err != nil {
@@ -858,7 +868,11 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 			if sharedNative {
 				r.embeddedProxy, err = startEmbeddedSharedNative(ctx, plan.NativeSource, p.Protocol, data)
 			} else {
-				r.embeddedProxy, err = startEmbeddedSingBox(data, request.FullDevice)
+				if balanced {
+					r.embeddedProxy, err = r.startBalanceRouter(ctx, request.Balance, data, request.FullDevice)
+				} else {
+					r.embeddedProxy, err = startEmbeddedSingBox(data, request.FullDevice)
+				}
 			}
 			clear(data)
 			if err != nil {
@@ -951,7 +965,11 @@ func (r *Runtime) start(ctx context.Context, request control.Request) (err error
 		if native {
 			name = tunnel
 		}
-		paths, e := r.transportProcesses(p.Protocol, request.FullDevice, plan.NeedsXray)
+		processKind := p.Protocol
+		if balanced {
+			processKind = 2
+		}
+		paths, e := r.transportProcesses(processKind, request.FullDevice, plan.NeedsXray)
 		if e != nil {
 			return e
 		}
