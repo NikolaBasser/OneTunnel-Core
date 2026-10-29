@@ -19,6 +19,9 @@ import (
 type presetSource struct {
 	Name, Format, Category, Action string
 	Pending                        bool
+	URL, Label                     string   `json:",omitempty"`
+	Index                          int      `json:",omitempty"`
+	Warnings                       []string `json:",omitempty"`
 }
 type PresetRow struct {
 	Name, Format, Category, Action   string
@@ -95,6 +98,12 @@ func presetCatalog(n *protocol.NetworkOptions, raw string) ([]presetSource, erro
 			return nil, protocol.ErrConfiguration
 		}
 		seen[s.Name] = true
+		if s.Format == "provider-xray" {
+			if len(sources) != 1 || s.Name != "provider-source" || !validProviderURL(s.URL) || s.Index < 0 || s.Index >= 256 || len(s.Label) > 512 || len(s.Warnings) > 128 || s.Pending {
+				return nil, protocol.ErrConfiguration
+			}
+			return sources, nil
+		}
 		if s.Format != "" {
 			check, e := normalizedPresetSource(RuleImportInput{Name: s.Name, Format: s.Format, Category: s.Category, Action: s.Action})
 			if e != nil || check.Name != s.Name || check.Category != s.Category {

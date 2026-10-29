@@ -54,6 +54,7 @@ type Request struct {
 	NetworkInput     *NetworkInput
 	PolicyQuery      *protocol.RouteQuery
 	RuleImport       *RuleImportInput
+	ProviderRouting  *ProviderRoutingInput
 	PolicyRule       *protocol.NetworkRule
 	Password         string
 	RestoreSchedules bool
@@ -760,6 +761,8 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return refreshPresetDraft(ctx, r.NetworkInput)
 	case "network.presets.recommended":
 		return recommendedPresetDraft(ctx)
+	case "network.presets.provider":
+		return providerRoutingDraft(ctx, r.ProviderRouting)
 	case "network.rules.append":
 		return appendRuleDraft(r.NetworkInput, r.PolicyRule)
 	case "network.explain":

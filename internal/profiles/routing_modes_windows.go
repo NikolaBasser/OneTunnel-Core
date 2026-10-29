@@ -85,7 +85,7 @@ func (p RoutingPreferences) normalized() (RoutingPreferences, error) {
 		if e != nil {
 			return p, e
 		}
-		if i == 1 && !presetOnly(n) {
+		if i == 1 && !presetOnly(n) && !providerPresetOnly(n, p.PresetConfigText) {
 			return p, fmt.Errorf("Пресеты содержат только импортированные наборы; ручные правила задайте в режиме «Свои правила».")
 		}
 		if i == 0 {
@@ -126,7 +126,7 @@ func normalizeRoutingProfiles(doc *Document) error {
 			delete(doc.RoutingProfiles, id)
 			continue
 		}
-		if state.Mode == "none" && inferRouting(profile.Network) != "none" || state.Mode == "preset" && !presetOnly(profile.Network) {
+		if state.Mode == "none" && inferRouting(profile.Network) != "none" || state.Mode == "preset" && !presetOnly(profile.Network) && !providerPresetOnly(profile.Network, state.PresetConfigText) {
 			state.Mode = inferRouting(profile.Network)
 		}
 		if state.Mode == "custom" {
