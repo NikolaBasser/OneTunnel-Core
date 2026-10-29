@@ -70,7 +70,7 @@ func TestNetworkInputParseAndPreferencesSave(t *testing.T) {
 	if err := json.Unmarshal(viewJSON, &viewObject); err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "ResolversText", "DNSRulesText", "AllowLAN", "Supported", "CanSave", "FakeIP", "CacheMode", "CacheCapacity")
+	assertJSONKeys(t, viewObject, "ID", "Token", "Message", "Mode", "ServerIP", "ServerName", "Port", "Path", "RulesText", "ResolversText", "DNSRulesText", "AllowLAN", "Supported", "CanSave", "FakeIP", "CacheMode", "CacheCapacity", "RoutingMode", "CustomRulesText", "PresetRulesText", "PresetConfigText", "PresetRows", "PresetSummary")
 	if view.ResolversText != "https | 1.1.1.1 | dns.example | 443 | /dns-query\n" || view.DNSRulesText != "domain-suffix | example.com | 1\n" || !view.AllowLAN {
 		t.Fatalf("DNS preferences view: %+v", view)
 	}
