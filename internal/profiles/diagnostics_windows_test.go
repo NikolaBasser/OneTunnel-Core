@@ -27,7 +27,7 @@ func TestFormatDiagnosticsReportCountsAllowlistAndSecrets(t *testing.T) {
 	}
 
 	oldVersion, oldRevision, oldDirty := buildinfo.Version, buildinfo.Revision, buildinfo.Dirty
-	buildinfo.Version, buildinfo.Revision, buildinfo.Dirty = "v0.5.0", "0123456789abcdef0123456789abcdef01234567", "true"
+	buildinfo.Version, buildinfo.Revision, buildinfo.Dirty = "v0.2.0", "0123456789abcdef0123456789abcdef01234567", "true"
 	t.Cleanup(func() { buildinfo.Version, buildinfo.Revision, buildinfo.Dirty = oldVersion, oldRevision, oldDirty })
 	text, err := formatDiagnosticsReport(doc, map[string]bool{"amneziawg.exe": true, "xray.exe": false, "sing-box.exe": true})
 	if err != nil {

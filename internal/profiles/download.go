@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"errors"
+	"github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,7 +35,7 @@ func downloadWithClient(ctx context.Context, source string, client *http.Client)
 	if e != nil {
 		return ImportResult{}, ErrImport
 	}
-	req.Header.Set("User-Agent", "v2rayN/7.0 OneTunnel/0.3.1")
+	req.Header.Set("User-Agent", "v2rayN/7.0 OneTunnel/"+buildinfo.Version)
 	req.Header.Set("Accept", "application/json, text/plain;q=0.9")
 	response, e := client.Do(req)
 	if e != nil {

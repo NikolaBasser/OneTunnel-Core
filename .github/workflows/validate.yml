@@ -24,8 +24,8 @@ jobs:
         with:
           go-version: '1.27.3'
           cache-dependency-path: go.sum
-      - run: go test -mod=readonly -count=1 ./internal/control ./internal/protocol ./internal/profiles ./sdk
-      - run: go vet -mod=readonly ./internal/control ./internal/protocol ./internal/profiles ./sdk
+      - run: go test -mod=readonly -count=1 ./internal/balancer ./internal/control ./internal/protocol ./internal/profiles ./sdk
+      - run: go vet -mod=readonly ./internal/balancer ./internal/control ./internal/protocol ./internal/profiles ./sdk
       - name: Compile mobile foundation libraries (no executable or device validation)
         if: matrix.runner == 'ubuntu-24.04'
         run: |

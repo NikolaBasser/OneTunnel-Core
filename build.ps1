@@ -26,7 +26,7 @@ if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^[0-9a-f]{40}$') { throw 'A sou
 $changes = @(& git -C $source status --porcelain --untracked-files=normal)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source dirty state.' }
 $dirty = $changes.Count -gt 0
-$version = '0.5.0'
+$version = '0.2.0'
 $tags = 'embeddedxray,embeddedsingbox,embeddedtun,embeddedawg,with_quic,with_gvisor,with_naive_outbound,with_purego'
 $flags = '-s -w -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Version=' + $version + ' -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Revision=' + $revision + ' -X github.com/NikolaBasser/OneTunnel-Core/internal/buildinfo.Dirty=' + $dirty.ToString().ToLowerInvariant()
 $saved = @{}

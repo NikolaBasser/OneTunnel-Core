@@ -1,0 +1,45 @@
+OneTunnel 0.2.0 — acceptance scope, 2026-10-29
+
+Product version is 0.2.0 for core and Windows application. API1 and persisted
+profile/backup format versions are unchanged. The Windows repository pins an
+exact clean core revision; product-version equality alone does not validate it.
+
+Networking acceptance on the dedicated Windows Server 2025 x64 VM:
+- common proxy/WG/AWG pool across subscriptions and manual groups;
+- automatic up-to-eight selection over 20 seconds, median/spread/failure ranking,
+  excluded unreachable/unmeasured candidates and no direct fallback;
+- actual WG, AWG, HTTP and VLESS/Xray transports, TCP distribution and UDP affinity;
+- actual mixed OS TUN, WFP, encrypted DNS and owner-scoped independent recovery;
+- settings-routing with original AllowedIPs=172.16.0.0/24: WG and AWG each pass
+  TCP/UDP to 10.77.0.1 and encrypted DNS to 1.1.1.1 using temporary full-route copies;
+- imported source, keys, endpoint and AWG parameters remain unchanged;
+- original AllowedIPs mode ignores stored policy and the common pool;
+- IPv4/IPv6/dual-stack copy construction and multi-peer default ownership checks;
+- paired geosite/geoip and imported Liberty domain/IP routing, category resolution,
+  active-proxy download route, official GitHub fallback and unchanged draft on error.
+
+These network checks passed on the 2026-10-29 source baseline through 92a7d70.
+The 0.2.0 release adds unified version metadata and a version-derived subscription
+User-Agent; published release validation and hashes accompany the release assets.
+The new original-AllowedIPs request path is checked by compiler/store/RPC fixtures;
+the changed full-route path is additionally checked with actual OS TUN traffic.
+
+Windows UI acceptance includes real Go persistence, automatic/manual pool settings,
+subscription routing, native mode labels, grouped library interaction, retained
+drafts, normal/minimum layouts and a complete isolated WPF regression.
+All completed test runs restore networking and remove their owned adapters/tasks.
+Primary-PC networking was not changed by these acceptance runs.
+
+Remaining boundaries are not certified by successful repetitions:
+- original isolated UDP-TUN startup timeout: OneTunnel-Core issue #24;
+- ARM64 execution, physical sleep/Wi-Fi and hardware matrix: core issue #25;
+- interactive global hotkeys, real monitor DPI and advanced-DNS visual review:
+  OneTunnel-Windows issue #26;
+- the newest native full-route-copy live test covers IPv4; IPv6 copy construction
+  is unit checked, while a new live IPv6 run remains separate;
+- established TCP sessions do not migrate, and arbitrary providers/protocol
+  combinations are not exhaustively certified.
+
+Install/update the bundled service before reconnecting to use new core behavior.
+No private subscriptions, keys, user profile stores or raw private diagnostics
+are included in source or release assets.

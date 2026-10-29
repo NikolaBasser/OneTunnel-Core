@@ -1,4 +1,4 @@
-OneTunnel-Core: independent Windows amd64 bundle
+OneTunnel-Core 0.2.0: independent Windows amd64 bundle
 
 Requirements: Git checkout, PowerShell 5.1 or later, Go 1.27.3, and module dependencies.
 Prepare the toolchain and module cache explicitly. This build does not download a
@@ -28,7 +28,7 @@ Commit source changes before building a bundle intended for that pinned consumer
 The generated manifest must report the selected source revision and Dirty=false.
 
 CHECKS
-go test -mod=readonly ./internal/control ./internal/protocol ./internal/profiles
+go test -mod=readonly ./internal/balancer ./internal/control ./internal/protocol ./internal/profiles
 For Windows production-tag tests and vet, use the exact tags in .github/workflows/validate.yml.
 Core CI does not require .NET, UI assets or a Windows application checkout.
 No release or artifact publication is performed by this workflow.

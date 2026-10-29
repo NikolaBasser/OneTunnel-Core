@@ -6,15 +6,25 @@ The core owns protocol handling, profile import, subscription parsing, configura
 planning and connection coordination. Native adapters own operating-system integration.
 The Windows runtime embeds Xray, sing-box and AmneziaWG in the Go service.
 
-## Current source status — 2026-10-27
+## OneTunnel 0.2.0 — 2026-10-29
 
-Quality selection, proxy chains, multiple WG/AWG peers and advanced DNS/MUX
-controls are merged into `main`. This describes current source, not the older
-published 0.1.0 Windows package or an automatically upgraded installed service.
-The Windows application still selects an exact core revision.
+The application and core now share product version **0.2.0**. API1 and storage
+formats retain their existing compatibility versions. The Windows application
+still pins an exact clean core revision; updating the application does not
+automatically replace the installed service.
+
+This release adds paired Loyalsoldier routing, routing captured with subscriptions,
+global transport preferences, a common proxy/WG/AWG pool and automatic selection
+of up to eight servers over a 20-second measurement window. WG/AWG settings-routing
+uses full-route runtime copies; original AllowedIPs mode keeps the source routes.
+See [0.2 acceptance](ACCEPTANCE-0.2.txt) and the
+[Windows release](https://github.com/NikolaBasser/OneTunnel-Windows/releases/tag/v0.2.0).
 
 | Area | Verified scope | Remaining limits |
 | --- | --- | --- |
+| Routing presets | Paired geosite/geoip: ads blocked, RU direct, other traffic proxied. Compatible subscription domain/IP rules are retained on import. Active proxy and official GitHub asset fallback are used for downloads. | Provider balancers, port/transport conditions and BitTorrent classification are excluded from subscription routing. |
+| Shared server pool | Proxy, WG and AWG across subscriptions/manual groups; automatic top eight by median, spread and failures over 20 seconds, or explicit manual composition. Real TCP/UDP and TUN/WFP acceptance passes. | Existing TCP flows do not migrate. Measures reachability/latency, not bandwidth. |
+| Native routing modes | WG/AWG with original 172.16.0.0/24 pass TCP, UDP and encrypted DNS beyond that subnet through runtime copies; original source remains unchanged. | Live new-copy acceptance covers IPv4; IPv6 copy construction is unit checked. Multi-peer defaults must have an explicit owner. |
 | DNS and routing | DoH/DoT/DoQ/DoH3, domain resolver rules, FakeIP, bounded/disabled cache; TLS rejection, proxy outage and real-address CIDR checks. DoH3/FakeIP also pass actual OS TUN with IPv4/IPv6. | No blanket certification of every application, DNS channel or provider. |
 | Multiplexing | Shadowsocks/Trojan h2mux/smux/yamux, padding and connection/stream policies; 24 live fixture combinations, concurrent HTTP, UDP and broken-session recovery. VLESS Xray XUDP and UDP443 policies pass. | Server support and valid transport combinations are required. |
 | Proxy chains | Two/three Shadowsocks UDP hops; actual three-hop OS TUN, IPv4/IPv6, 512/4096-byte payloads and each-hop outage/recovery. | Other protocol/topology combinations are not exhaustively tested. |
@@ -24,16 +34,17 @@ The Windows application still selects an exact core revision.
 | UDP-TUN startup | One cold start after reboot and 20 repeated start/stop cycles pass; safety-only WFP tracing finds no unfinished calls. | The original isolated timeout has no established cause: [#24](https://github.com/NikolaBasser/OneTunnel-Core/issues/24). |
 | Hardware coverage | Dedicated Windows Server 2025 x64 VM; separate earlier bounded primary-PC LAN acceptance. | Windows ARM64 execution and physical hardware coverage: [#25](https://github.com/NikolaBasser/OneTunnel-Core/issues/25). |
 
-Latest dedicated-VM regression: **323 top-level tests across eight packages**.
-The companion Windows application passed **215 isolated session0 WPF assertions**;
+The earlier 2026-10-27 dedicated-VM baseline comprised **323 top-level tests across eight packages**.
+That companion Windows run passed **215 isolated session0 WPF assertions**;
 interactive hotkey blocks were explicitly skipped in that run. New-control visual
 layout and interactive hotkeys are tracked in
 [Windows #26](https://github.com/NikolaBasser/OneTunnel-Windows/issues/26).
 See the [DNS/MUX acceptance record](docs/DNS-MUX-ACCEPTANCE-2026-10-27.txt).
 
-[Core main CI](https://github.com/NikolaBasser/OneTunnel-Core/actions/runs/40531976406)
-and [full Windows pinned-core integration](https://github.com/NikolaBasser/OneTunnel-Windows/actions/runs/40531199702)
-passed. Portable Linux ARM64 CI and standalone recovery cross-compilation do not
+Historical [core CI](https://github.com/NikolaBasser/OneTunnel-Core/actions/runs/40531976406)
+and [Windows integration](https://github.com/NikolaBasser/OneTunnel-Windows/actions/runs/40531199702)
+passed for that baseline. Current checks are on the [Actions page](https://github.com/NikolaBasser/OneTunnel-Core/actions).
+Portable Linux ARM64 CI and standalone recovery cross-compilation do not
 establish a working Windows ARM64 VPN runtime. Test VM recovery left no owned
 test WFP objects, tunnel adapters or recovery tasks; the service was running idle.
 
