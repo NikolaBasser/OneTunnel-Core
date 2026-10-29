@@ -8,12 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"github.com/xtls/xray-core/common/geodata"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestLoyalCompiledIPRouting(t *testing.T) {
@@ -34,7 +37,9 @@ func TestLoyalCompiledIPRouting(t *testing.T) {
 				server.Listener = listener
 				server.Start()
 				defer server.Close()
-				data, e := protocol.ImportLoyalsoldier("clash-ipcidr", "", []byte("payload:\n - '"+prefix+"'\n"))
+				pfx := netip.MustParsePrefix(prefix)
+				raw, _ := proto.Marshal(&geodata.GeoIPList{Entry: []*geodata.GeoIP{{Code: "test", Cidr: []*geodata.CIDR{{Ip: pfx.Addr().AsSlice(), Prefix: uint32(pfx.Bits())}}}}})
+				data, e := protocol.ImportLoyalsoldier("geoip", "test", raw)
 				if e != nil {
 					t.Fatal(e)
 				}

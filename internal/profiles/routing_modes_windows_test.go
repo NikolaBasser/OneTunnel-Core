@@ -17,8 +17,8 @@ func TestRoutingModeBanks(t *testing.T) {
 	store := managementStore(t, Document{Profiles: []Profile{p}})
 	app := &Application{Store: store}
 	fixture := filepath.Join(t.TempDir(), "preset.txt")
-	os.WriteFile(fixture, []byte("payload:\n - '+.preset.example'\n"), 0600)
-	imported, e := importRuleDraft(context.Background(), &NetworkInput{Mode: "default"}, &RuleImportInput{Format: "clash-domain", Name: "loyal-test", Action: "reject", Path: fixture})
+	os.WriteFile(fixture, geoSiteFixture(t, "test", "preset.example"), 0600)
+	imported, e := importRuleDraft(context.Background(), &NetworkInput{Mode: "default"}, &RuleImportInput{Format: "geosite", Category: "test", Name: "loyal-test", Action: "reject", Path: fixture})
 	if e != nil {
 		t.Fatal(e)
 	}

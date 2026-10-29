@@ -48,15 +48,6 @@ func TestLoyalFormats(t *testing.T) {
 			t.Fatal(v)
 		}
 	}
-	for _, tc := range []struct{ format, body, domain, ip string }{
-		{"clash-domain", "payload:\n  - 'exact.example'\n  - '+.suffix.example'\n", "a.suffix.example", ""},
-		{"clash-ipcidr", "payload:\n  - '2001:db8::/32'\n", "", "2001:db8::7"},
-	} {
-		v, e := ImportLoyalsoldier(tc.format, "", []byte(tc.body))
-		if e != nil || v.match(RouteQuery{Domain: tc.domain, IP: tc.ip}) != 1 {
-			t.Fatalf("clash %v %v", v, e)
-		}
-	}
 	n := &NetworkOptions{RuleSets: []RuleSet{{Name: "loyal-test", Data: d}}, Rules: []NetworkRule{{Kind: "rule-set", Value: "loyal-test", Action: "reject"}}}
 	normalized, e := NormalizeNetworkOptions(n)
 	if e != nil {

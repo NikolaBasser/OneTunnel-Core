@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -126,45 +124,6 @@ func ImportLoyalsoldier(format, category string, content []byte) (*RuleSetData, 
 				return nil, fmt.Errorf("rule_import_cidr")
 			}
 			d.IPCIDR = append(d.IPCIDR, netip.PrefixFrom(ip, int(v.Prefix)).Masked().String())
-		}
-	case "clash-domain", "clash-ipcidr":
-		content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
-		// Only the scalar payload format published by clash-rules; reject other YAML.
-		scanner := bufio.NewScanner(bytes.NewReader(content))
-		scanner.Buffer(make([]byte, 4096), 8192)
-		header := false
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			if !header {
-				if line != "payload:" {
-					return nil, fmt.Errorf("rule_import_payload")
-				}
-				header = true
-				continue
-			}
-			if !strings.HasPrefix(line, "- ") {
-				return nil, fmt.Errorf("rule_import_scalar")
-			}
-			v := strings.TrimSpace(line[2:])
-			if len(v) >= 2 && (v[0] == '\'' && v[len(v)-1] == '\'' || v[0] == '"' && v[len(v)-1] == '"') {
-				v = v[1 : len(v)-1]
-			}
-			if format == "clash-ipcidr" {
-				d.IPCIDR = append(d.IPCIDR, v)
-			} else if strings.HasPrefix(v, "+.") {
-				d.DomainSuffix = append(d.DomainSuffix, v[2:])
-			} else {
-				if strings.ContainsAny(v, "*+\"'!&[]{}") {
-					return nil, fmt.Errorf("rule_import_unsupported_wildcard")
-				}
-				d.Domain = append(d.Domain, v)
-			}
-		}
-		if scanner.Err() != nil {
-			return nil, fmt.Errorf("rule_import_line_size")
 		}
 	default:
 		return nil, fmt.Errorf("rule_import_format")

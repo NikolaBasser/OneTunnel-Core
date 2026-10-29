@@ -30,20 +30,7 @@ func loyalURL(format, category string) (string, error) {
 	if format == "geosite" || format == "geoip" {
 		return "https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/" + format + ".dat", nil
 	}
-	domain := "direct proxy reject private apple icloud google gfw tld-not-cn"
-	cidr := "telegramcidr lancidr cncidr"
-	allowed := domain
-	if format == "clash-ipcidr" {
-		allowed = cidr
-	} else if format != "clash-domain" {
-		return "", fmt.Errorf("Выберите формат набора.")
-	}
-	for _, v := range strings.Fields(allowed) {
-		if v == category {
-			return "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/" + v + ".txt", nil
-		}
-	}
-	return "", fmt.Errorf("Неизвестный список Clash. Используйте имя из каталога Loyalsoldier.")
+	return "", fmt.Errorf("Поддерживаются только geosite.dat и geoip.dat.")
 }
 func downloadLoyal(ctx context.Context, format, category string) ([]byte, error) {
 	url, e := loyalURL(format, category)
@@ -71,6 +58,9 @@ func importRuleDraft(ctx context.Context, input *NetworkInput, request *RuleImpo
 	fail := func(e error) (RuleImportResult, error) { return RuleImportResult{}, e }
 	if input == nil || request == nil {
 		return fail(protocol.ErrConfiguration)
+	}
+	if request.Format != "geosite" && request.Format != "geoip" {
+		return fail(fmt.Errorf("Поддерживаются только geosite.dat и geoip.dat."))
 	}
 	options, e := input.Parse()
 	if e != nil {

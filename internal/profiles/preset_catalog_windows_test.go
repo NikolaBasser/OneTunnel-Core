@@ -80,7 +80,7 @@ func TestPresetCatalogLiveRefreshAndPersistence(t *testing.T) {
 		t.Skip("explicit VM network acceptance")
 	}
 	input := &NetworkInput{Mode: "default"}
-	for _, source := range []RuleImportInput{{Format: "geosite", Category: "youtube", Action: "proxy"}, {Format: "geoip", Category: "telegram", Action: "proxy"}, {Format: "clash-domain", Category: "reject", Action: "reject"}} {
+	for _, source := range []RuleImportInput{{Format: "geosite", Category: "youtube", Action: "proxy"}, {Format: "geoip", Category: "telegram", Action: "proxy"}, {Format: "geosite", Category: "category-ads-all", Action: "reject"}} {
 		r, e := configurePresetDraft(input, &source, false)
 		if e != nil {
 			t.Fatal(e)
@@ -139,4 +139,36 @@ func TestPresetCatalogLiveRefreshAndPersistence(t *testing.T) {
 		t.Fatal("partial refresh changed caller draft")
 	}
 	t.Logf("presets=%d records=%d repeat refresh passed", len(first.PresetRows), first.Count)
+}
+
+func TestRetiredPresetOriginsKeepSnapshots(t *testing.T) {
+	n := &protocol.NetworkOptions{RuleSets: []protocol.RuleSet{{Name: "legacy", Data: &protocol.RuleSetData{DomainSuffix: []string{"legacy.example"}}}}, Rules: []protocol.NetworkRule{{Kind: "rule-set", Value: "legacy", Action: "reject"}}}
+	text := routeText(n)
+	state, e := (RoutingPreferences{Mode: "preset", PresetRulesText: text, PresetConfigText: `[{"Name":"legacy","Format":"clash-domain","Category":"reject","Action":"reject"},{"Name":"never-loaded","Format":"clash-ipcidr","Category":"cncidr","Action":"proxy","Pending":true}]`}).normalized()
+	if e != nil || state.PresetRulesText != text {
+		t.Fatal("snapshot changed during retirement", e)
+	}
+	sources, e := presetCatalog(n, state.PresetConfigText)
+	if e != nil || len(sources) != 1 || sources[0].Format != "" || sources[0].Pending {
+		t.Fatal("retired catalog migration", e)
+	}
+	parsed, e := (NetworkInput{Mode: "default", RulesText: state.PresetRulesText}).Parse()
+	if e != nil {
+		t.Fatal(e)
+	}
+	prediction, e := protocol.ExplainRoute(parsed, protocol.RouteQuery{Domain: "a.legacy.example", Port: 443})
+	if e != nil || prediction.Decision != "reject" {
+		t.Fatal("saved rule stopped working", e)
+	}
+	for _, format := range []string{"clash-domain", "clash-ipcidr"} {
+		if _, e := loyalURL(format, "reject"); e == nil {
+			t.Fatal("retired remote source allowed")
+		}
+		if _, e := importRuleDraft(context.Background(), &NetworkInput{Mode: "default"}, &RuleImportInput{Format: format, Name: "new", Action: "proxy", Path: `C:\not-a-file`}); e == nil {
+			t.Fatal("retired local import allowed")
+		}
+	}
+	if _, e = refreshPresetDraft(context.Background(), &NetworkInput{Mode: "default", RulesText: state.PresetRulesText, PresetConfigText: state.PresetConfigText}); e == nil {
+		t.Fatal("retired source silently fetched")
+	}
 }

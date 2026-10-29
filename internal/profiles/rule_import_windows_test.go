@@ -9,15 +9,26 @@ import (
 	"testing"
 
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
+	"github.com/xtls/xray-core/common/geodata"
+	"google.golang.org/protobuf/proto"
 )
 
+func geoSiteFixture(t *testing.T, category, domain string) []byte {
+	t.Helper()
+	b, e := proto.Marshal(&geodata.GeoSiteList{Entry: []*geodata.GeoSite{{Code: category, Domain: []*geodata.Domain{{Type: geodata.Domain_Domain, Value: domain}}}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	return b
+}
+
 func TestLoyalDraftImport(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "list.txt")
-	if e := os.WriteFile(path, []byte("payload:\n - '+.example.org'\n"), 0600); e != nil {
+	path := filepath.Join(t.TempDir(), "geosite.dat")
+	if e := os.WriteFile(path, geoSiteFixture(t, "test", "example.org"), 0600); e != nil {
 		t.Fatal(e)
 	}
 	input := &NetworkInput{Mode: "default", RulesText: "domain | direct | before.example"}
-	request := &RuleImportInput{Format: "clash-domain", Category: "proxy", Name: "loyal-test", Action: "reject", Path: path}
+	request := &RuleImportInput{Format: "geosite", Category: "test", Name: "loyal-test", Action: "reject", Path: path}
 	r, e := importRuleDraft(context.Background(), input, request)
 	if e != nil || r.Count != 1 || len(r.SHA256) != 64 {
 		t.Fatalf("%+v %v", r, e)
@@ -63,8 +74,6 @@ func TestLoyalLiveDownloads(t *testing.T) {
 	}
 	for _, tc := range []struct{ format, category string }{
 		{"geosite", "youtube"}, {"geosite", "category-ads-all"}, {"geoip", "ru"}, {"geoip", "telegram"},
-		{"clash-domain", "proxy"}, {"clash-domain", "direct"}, {"clash-domain", "reject"}, {"clash-domain", "private"}, {"clash-domain", "apple"}, {"clash-domain", "icloud"}, {"clash-domain", "google"}, {"clash-domain", "gfw"}, {"clash-domain", "tld-not-cn"},
-		{"clash-ipcidr", "telegramcidr"}, {"clash-ipcidr", "lancidr"}, {"clash-ipcidr", "cncidr"},
 	} {
 		t.Run(tc.format+"/"+tc.category, func(t *testing.T) {
 			r, e := importRuleDraft(context.Background(), &NetworkInput{Mode: "default"}, &RuleImportInput{Format: tc.format, Category: tc.category, Name: "loyal-test", Action: "proxy", Download: true})
@@ -84,8 +93,8 @@ func TestLoyalLargeCombinedStorage(t *testing.T) {
 		t.Skip("explicit VM network acceptance")
 	}
 	input := &NetworkInput{Mode: "default"}
-	for _, category := range []string{"reject", "direct", "proxy"} {
-		r, e := importRuleDraft(context.Background(), input, &RuleImportInput{Format: "clash-domain", Category: category, Name: "loyal-" + category, Action: category, Download: true})
+	for i, category := range []string{"category-ads-all", "youtube", "google"} {
+		r, e := importRuleDraft(context.Background(), input, &RuleImportInput{Format: "geosite", Category: category, Name: []string{"loyal-ads", "loyal-video", "loyal-search"}[i], Action: []string{"reject", "direct", "proxy"}[i], Download: true})
 		if e != nil {
 			t.Fatal(e)
 		}

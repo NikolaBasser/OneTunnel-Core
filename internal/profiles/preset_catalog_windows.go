@@ -66,6 +66,29 @@ func presetCatalog(n *protocol.NetworkOptions, raw string) ([]presetSource, erro
 	if len(sources) > protocol.MaxRuleSets {
 		return nil, protocol.ErrConfiguration
 	}
+	// Retired origins become local snapshots; never reinterpret their contents.
+	kept := make([]presetSource, 0, len(sources))
+	for _, s := range sources {
+		if s.Format == "clash-domain" || s.Format == "clash-ipcidr" {
+			found := false
+			if n != nil {
+				for _, r := range n.Rules {
+					if r.Kind == "rule-set" && r.Value == s.Name {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				continue
+			}
+			s.Format = ""
+			s.Category = ""
+			s.Pending = false
+		}
+		kept = append(kept, s)
+	}
+	sources = kept
 	seen := map[string]bool{}
 	for i, s := range sources {
 		if s.Name == "" || seen[s.Name] {
@@ -128,11 +151,8 @@ func presetRows(sources []presetSource) []PresetRow {
 	rows := make([]PresetRow, 0, len(sources))
 	for _, s := range sources {
 		name, status := s.Format+" · "+s.Category, "Готов"
-		if strings.HasPrefix(s.Format, "clash-") {
-			name = "Clash · " + s.Category
-		}
 		if s.Format == "" {
-			name = s.Name
+			name = "Сохранённый набор"
 			status = "Укажите источник"
 		}
 		if s.Pending {
