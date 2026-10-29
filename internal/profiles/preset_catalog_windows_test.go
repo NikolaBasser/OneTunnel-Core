@@ -31,8 +31,8 @@ func TestRecommendedPresetLive(t *testing.T) {
 		want  string
 	}{
 		{protocol.RouteQuery{Domain: "yandex.ru", Port: 443}, "direct"},
-		{protocol.RouteQuery{Domain: "example.invalid", Port: 443}, "proxy"},
-		{protocol.RouteQuery{IP: "77.88.8.8", Port: 443}, "direct"},
+		{protocol.RouteQuery{Domain: "example.invalid", IP: "203.0.113.9", Port: 443}, "proxy"},
+		{protocol.RouteQuery{Domain: "example.invalid", IP: "77.88.8.8", Port: 443}, "direct"},
 	} {
 		got, e := protocol.ExplainRoute(n, q.query)
 		if e != nil || got.Decision != q.want {
