@@ -478,6 +478,9 @@ func (a *Application) SaveEditor(ctx context.Context, r Request) (Applied, error
 		for i, old := range d.Profiles {
 			if old.ID == r.ID {
 				p.ID = r.ID
+				if r.TransportInput == nil && r.Transport == nil {
+					p.Transport = old.Transport
+				}
 				if r.NetworkInput != nil {
 					p.Network, e = r.NetworkInput.Parse()
 					if e != nil {

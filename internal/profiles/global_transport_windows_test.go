@@ -73,6 +73,23 @@ func boolInt(v bool) int {
 	return 0
 }
 
+func TestGlobalTransportLegacyEditPreservesHiddenOptions(t *testing.T) {
+	a, _, _, _, _ := automationFixture(t)
+	doc, _ := a.Store.Load()
+	p := doc.Profiles[0]
+	options := defaults()
+	options.Mux = true
+	p.Transport = &options
+	doc.Profiles[0] = p
+	if e := a.Store.Save(doc); e != nil {
+		t.Fatal(e)
+	}
+	got, e := a.SaveEditor(context.Background(), Request{ID: p.ID, Name: "Renamed", Group: p.Group, Source: p.Source})
+	if e != nil || !reflect.DeepEqual(got.Selected.Transport, p.Transport) {
+		t.Fatal("name edit discarded legacy transport before explicit global migration", e)
+	}
+}
+
 func TestGlobalTransportSaveAndStartFallbacks(t *testing.T) {
 	a, _, _, _, _ := automationFixture(t)
 	prefs := UserPreferences{Transport: globalTransportFixture()}
