@@ -26,6 +26,21 @@ func TestBalanceRequestWireAndValidation(t *testing.T) {
 	if e != nil || !reflect.DeepEqual(got, r) {
 		t.Fatal("pool snapshot changed at IPC boundary", e)
 	}
+	r.Balance.Automatic = true
+	r.Balance.Best = 8
+	if code := Validate(r); code != "" {
+		t.Fatal("automatic candidate snapshot rejected", code)
+	}
+	wire.Reset()
+	if err := WriteFrame(&wire, r); err != nil {
+		t.Fatal(err)
+	}
+	got, e = ReadFrame[Request](&wire)
+	if e != nil || !reflect.DeepEqual(got, r) {
+		t.Fatal("automatic mode lost at IPC boundary", e)
+	}
+	r.Balance.Automatic = false
+	r.Balance.Best = 2
 	r.Balance.Members[1] = a
 	if Validate(r) == "" {
 		t.Fatal("duplicate pool identity accepted")

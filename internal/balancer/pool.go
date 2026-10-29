@@ -55,7 +55,7 @@ type Pool struct {
 }
 
 func New(nodes []Node, mode string, best int, interval, maxRTT time.Duration) (*Pool, error) {
-	if len(nodes) < 2 || len(nodes) > 8 || (mode != "best" && mode != "balanced") || best < 1 || best > len(nodes) || interval <= 0 || maxRTT <= 0 {
+	if len(nodes) < 1 || len(nodes) > 8 || (mode != "best" && mode != "balanced") || best < 1 || best > len(nodes) || interval <= 0 || maxRTT <= 0 {
 		return nil, errors.New("invalid pool")
 	}
 	ctx, cancel := context.WithCancel(context.Background())

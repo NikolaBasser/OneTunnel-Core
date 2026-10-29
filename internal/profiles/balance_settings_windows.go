@@ -12,6 +12,7 @@ type BalanceInput struct {
 	Enabled                bool
 	Mode, ProfileIDs       string
 	Best, Interval, MaxRTT int
+	Manual                 bool
 }
 
 func (b BalanceInput) snapshot(doc Document) (*control.Balance, error) {
@@ -21,7 +22,21 @@ func (b BalanceInput) snapshot(doc Document) (*control.Balance, error) {
 	result := &control.Balance{Mode: b.Mode, Best: b.Best, Interval: b.Interval, MaxRTT: b.MaxRTT}
 	seen := map[string]bool{}
 	ids := strings.Split(b.ProfileIDs, ",")
-	if len(ids) > 8 {
+	if !b.Manual {
+		ids = nil
+		for _, p := range doc.Profiles {
+			ids = append(ids, p.ID)
+		}
+		result.Automatic = true
+		result.Best = 8
+		if len(ids) == 0 {
+			return nil, errors.New("В библиотеке нет серверов для автоматического подбора.")
+		}
+		if len(ids) > 4096 {
+			return nil, errors.New("Для автоматического подбора поддерживается до 4096 серверов.")
+		}
+	}
+	if b.Manual && len(ids) > 8 {
 		return nil, errors.New("Выберите от 2 до 8 серверов для общего пула.")
 	}
 	for _, id := range ids {

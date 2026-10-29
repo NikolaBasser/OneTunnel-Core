@@ -63,6 +63,14 @@ func (l *balanceLazy) ListenPacketTo(ctx context.Context, a string) (net.PacketC
 	return t.ListenPacketTo(ctx, a)
 }
 func (l *balanceLazy) Done() <-chan struct{} { return l.done }
+func (l *balanceLazy) reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.active != nil {
+		_ = l.active.Close()
+		l.active = nil
+	}
+}
 func (l *balanceLazy) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -231,6 +239,22 @@ func (r *Runtime) buildBalanceNode(ctx context.Context, p control.Profile) (bala
 }
 
 func (r *Runtime) startBalanceRouter(ctx context.Context, b *control.Balance, data []byte, full bool) (interface{ Close() error }, error) {
+	return r.startBalanceRouterWithProbe(ctx, b, data, full, "")
+}
+func (r *Runtime) startBalanceRouterWithProbe(ctx context.Context, b *control.Balance, data []byte, full bool, probeIP string) (interface{ Close() error }, error) {
+	var probeMu sync.Mutex
+	probeAddress := func(ctx context.Context) (string, error) {
+		probeMu.Lock()
+		defer probeMu.Unlock()
+		if probeIP != "" {
+			return probeIP, nil
+		}
+		ip, err := r.secureQualityBootstrap(ctx, "www.gstatic.com")
+		if err == nil {
+			probeIP = ip
+		}
+		return ip, err
+	}
 	nodes := []balancer.Node{}
 	nativePlans := []*embeddedawg.Plan{}
 	for _, member := range b.Members {
@@ -242,12 +266,23 @@ func (r *Runtime) startBalanceRouter(ctx context.Context, b *control.Balance, da
 		if p.Protocol < 2 {
 			plan, e := embeddedawg.Parse(p.Source, p.Protocol, false)
 			if e != nil {
+				if b.Automatic {
+					continue
+				}
 				return nil, e
 			}
+			duplicate := false
 			for _, existing := range nativePlans {
 				if plan.SamePeer(existing) {
+					if b.Automatic {
+						duplicate = true
+						break
+					}
 					return nil, errors.New("pool cannot run duplicate WG/AWG peer identities")
 				}
+			}
+			if duplicate {
+				continue
 			}
 			nativePlans = append(nativePlans, plan)
 			covers = func(network, address string) bool {
@@ -276,7 +311,7 @@ func (r *Runtime) startBalanceRouter(ctx context.Context, b *control.Balance, da
 			if !covers("tcp", "1.1.1.1:443") {
 				return 0, balancer.ErrProbeNotCovered
 			}
-			ip, e := r.secureQualityBootstrap(ctx, "www.gstatic.com")
+			ip, e := probeAddress(ctx)
 			if e != nil {
 				return 0, e
 			}
@@ -304,7 +339,44 @@ func (r *Runtime) startBalanceRouter(ctx context.Context, b *control.Balance, da
 		}
 		nodes = append(nodes, node)
 	}
-	pool, e := balancer.New(nodes, b.Mode, b.Best, time.Duration(b.Interval)*time.Second, time.Duration(b.MaxRTT)*time.Millisecond)
+	if b.Automatic {
+		// Discovery closes each temporary engine before releasing its worker;
+		// only the final pool keeps engines alive.
+		probes := append([]balancer.Node(nil), nodes...)
+		for i := range probes {
+			probe := probes[i].Probe
+			lazy := probes[i].Transport.(*balanceLazy)
+			probes[i].Probe = func(ctx context.Context) (time.Duration, error) { defer lazy.reset(); return probe(ctx) }
+		}
+		selected, err := balancer.Select(ctx, probes, 20*time.Second, time.Duration(b.MaxRTT)*time.Millisecond)
+		if err != nil {
+			for _, node := range nodes {
+				_ = node.Transport.Close()
+			}
+			return nil, err
+		}
+		keep := map[string]bool{}
+		for _, node := range selected {
+			keep[node.ID] = true
+		}
+		retained := []balancer.Node{}
+		// Select returns quality order; preserve it for best mode and ties.
+		for _, node := range selected {
+			for _, original := range nodes {
+				if node.ID == original.ID {
+					retained = append(retained, original)
+					break
+				}
+			}
+		}
+		for _, node := range nodes {
+			if !keep[node.ID] {
+				_ = node.Transport.Close()
+			}
+		}
+		nodes = retained
+	}
+	pool, e := balancer.New(nodes, b.Mode, min(b.Best, len(nodes)), time.Duration(b.Interval)*time.Second, time.Duration(b.MaxRTT)*time.Millisecond)
 	if e != nil {
 		return nil, e
 	}

@@ -36,7 +36,7 @@ func balanceTestKey(t *testing.T) (string, string) {
 	}
 	return base64.StdEncoding.EncodeToString(k), base64.StdEncoding.EncodeToString(pub)
 }
-func balanceTestNative(t *testing.T, kind int, label string) (control.Profile, func()) {
+func balanceTestNative(t *testing.T, kind int, label string, internet ...string) (control.Profile, func()) {
 	t.Helper()
 	clientPrivate, clientPublic := balanceTestKey(t)
 	serverPrivate, serverPublic := balanceTestKey(t)
@@ -59,9 +59,40 @@ func balanceTestNative(t *testing.T, kind int, label string) (control.Profile, f
 	if e != nil {
 		t.Fatal(e)
 	}
-	device, stack, e := netstack.CreateNetTUN([]netip.Addr{netip.MustParseAddr("10.77.0.1")}, nil, 1420)
+	addresses := []netip.Addr{netip.MustParseAddr("10.77.0.1")}
+	probeIP := ""
+	if len(internet) > 0 && internet[0] != "" {
+		probeIP = internet[0]
+		addresses = append(addresses, netip.MustParseAddr(probeIP))
+	}
+	device, stack, e := netstack.CreateNetTUN(addresses, nil, 1420)
 	if e != nil {
 		t.Fatal(e)
+	}
+	if probeIP != "" {
+		listener, e := stack.ListenTCPAddrPort(netip.AddrPortFrom(netip.MustParseAddr(probeIP), 443))
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Cleanup(func() { listener.Close() })
+		go func() {
+			for {
+				client, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				go func() {
+					defer client.Close()
+					upstream, err := net.DialTimeout("tcp", net.JoinHostPort(probeIP, "443"), 4*time.Second)
+					if err != nil {
+						return
+					}
+					defer upstream.Close()
+					go func() { io.Copy(upstream, client); upstream.Close() }()
+					io.Copy(client, upstream)
+				}()
+			}
+		}()
 	}
 	engine, e := embeddedawg.Start(plan, device, conn.NewStdNetBind())
 	if e != nil {
@@ -106,7 +137,11 @@ func balanceTestNative(t *testing.T, kind int, label string) (control.Profile, f
 	if kind == 0 {
 		id = "22222222-2222-4222-8222-222222222222"
 	}
-	return control.Profile{ID: id, Name: label, Protocol: kind, Group: label, Source: source(clientPrivate, serverPublic, "10.77.0.2", "10.77.0.1", endpoint, "0")}, closeFn
+	clientSource := source(clientPrivate, serverPublic, "10.77.0.2", "10.77.0.1", endpoint, "0")
+	if probeIP != "" {
+		clientSource = strings.Replace(clientSource, "AllowedIPs = 10.77.0.1/32", "AllowedIPs = 0.0.0.0/0", 1)
+	}
+	return control.Profile{ID: id, Name: label, Protocol: kind, Group: label, Source: clientSource}, closeFn
 }
 func balanceVMonly(t *testing.T) {
 	t.Helper()
@@ -120,9 +155,25 @@ func balanceVMonly(t *testing.T) {
 }
 
 func TestBalanceLiveMixedTransports(t *testing.T) {
+	balanceLiveMixed(t, false)
+}
+func TestBalanceLiveAutomaticMixedTransports(t *testing.T) {
+	balanceLiveMixed(t, true)
+}
+func balanceLiveMixed(t *testing.T, automatic bool) {
 	balanceVMonly(t)
-	wg, stopWG := balanceTestNative(t, 1, "wg")
-	awg, stopAWG := balanceTestNative(t, 0, "awg")
+	probeIP := ""
+	if automatic {
+		var err error
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		probeIP, err = (&Runtime{}).secureQualityBootstrap(ctx, "www.gstatic.com")
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg, stopWG := balanceTestNative(t, 1, "wg", probeIP)
+	awg, stopAWG := balanceTestNative(t, 0, "awg", probeIP)
 	r := &Runtime{}
 	r.captureQualityUplinks()
 	gateway, e := newAcceptanceGateway()
@@ -176,11 +227,22 @@ func TestBalanceLiveMixedTransports(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	engine, e := r.startBalanceRouter(ctx, &control.Balance{Mode: "balanced", Best: 3, Interval: 15, MaxRTT: 10000, Members: []control.Profile{wg, awg, p}}, []byte(plan.Proxy), false)
+	members := []control.Profile{wg, awg, p}
+	if automatic {
+		members = append(members, control.Profile{ID: "44444444-4444-4444-8444-444444444444", Name: "unreachable", Group: "other subscription", Protocol: 6, Source: "http://127.0.0.1:1"})
+	}
+	started := time.Now()
+	engine, e := r.startBalanceRouterWithProbe(ctx, &control.Balance{Mode: "balanced", Best: 3, Interval: 15, MaxRTT: 10000, Members: members, Automatic: automatic}, []byte(plan.Proxy), false, probeIP)
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer engine.Close()
+	if automatic {
+		if time.Since(started) < 20*time.Second {
+			t.Fatal("20 second sampling skipped")
+		}
+		t.Log("20 second automatic discovery finished; down candidate excluded:", engine.(*embeddedsingbox.Engine).BalanceSummary())
+	}
 	dial, e := proxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", local), nil, proxy.Direct)
 	if e != nil {
 		t.Fatal(e)
@@ -226,8 +288,10 @@ func TestBalanceLiveMixedTransports(t *testing.T) {
 	if len(udpSeen) != 2 {
 		t.Fatal("UDP did not use WG and AWG", udpSeen)
 	}
-	if _, e = engine.(*embeddedsingbox.Engine).DialContext(ctx, "udp", "10.78.0.1:19091"); e == nil {
-		t.Fatal("native AllowedIPs or HTTP UDP coverage bypassed")
+	if !automatic {
+		if _, e = engine.(*embeddedsingbox.Engine).DialContext(ctx, "udp", "10.78.0.1:19091"); e == nil {
+			t.Fatal("native AllowedIPs or HTTP UDP coverage bypassed")
+		}
 	}
 	stopWG()
 	stopAWG()

@@ -468,3 +468,16 @@ unmeasured, use only covered destinations, and retry failed dials after cooldown
 State.BalanceStatus distinguishes confirmed probes from unmeasured candidates.
 The profile host persists comparable `UserSettings.Balance` values; deleting a
 selected member disables the saved pool rather than silently selecting another.
+
+Automatic composition (`UserSettings.Balance.Manual=false`, the default) snapshots
+the whole library at connection start. `Request.Balance.Automatic` accepts up to
+4096 candidates within the existing frame limit. Over 20 seconds, at most 16
+temporary engines probe concurrently; each full round precedes the next. Ranking
+uses median HTTPS delay, spread and failed-response ratio. At least two successful
+samples are required; up to eight measured members remain, with temporary engines
+closed before the live pool starts. The HTTPS address is securely resolved once
+per pool, so servers share the same measurement target. Restricted native peers
+without probe coverage and duplicate native peer aliases are excluded from
+automatic composition. Manual composition retains the explicit 2–8 member list.
+No measured member means connection failure, with no direct fallback. Automatic
+membership is refreshed on the next connection, not during established flows.
