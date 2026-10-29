@@ -277,6 +277,19 @@ func refreshPresetDraft(ctx context.Context, input *NetworkInput) (RuleImportRes
 	}
 	return presetDraftResult(n, sources, count), nil
 }
+
+// The paired preset has one fixed order; a failed download returns no partial draft.
+func recommendedPresetDraft(ctx context.Context) (RuleImportResult, error) {
+	return refreshPresetDraft(ctx, recommendedPresetInput())
+}
+
+func recommendedPresetInput() *NetworkInput {
+	return &NetworkInput{Mode: "default", PresetConfigText: encodePresetCatalog([]presetSource{
+		{Name: "loyal-ads", Format: "geosite", Category: "category-ads-all", Action: "reject", Pending: true},
+		{Name: "loyal-ru-sites", Format: "geosite", Category: "category-ru", Action: "direct", Pending: true},
+		{Name: "loyal-ru-ip", Format: "geoip", Category: "ru", Action: "direct", Pending: true},
+	})}
+}
 func appendRuleDraft(input *NetworkInput, rule *protocol.NetworkRule) (RuleImportResult, error) {
 	if input == nil || rule == nil {
 		return RuleImportResult{}, protocol.ErrConfiguration

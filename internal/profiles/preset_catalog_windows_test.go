@@ -9,6 +9,55 @@ import (
 	"github.com/NikolaBasser/OneTunnel-Core/internal/protocol"
 )
 
+func TestRecommendedPresetLive(t *testing.T) {
+	if os.Getenv("ONETUNNEL_LOYAL_LIVE") != "1" {
+		t.Skip("explicit VM network acceptance")
+	}
+	r, e := recommendedPresetDraft(context.Background())
+	if e != nil {
+		t.Fatal(e)
+	}
+	n, e := (NetworkInput{Mode: "default", RulesText: r.RulesText}).Parse()
+	if e != nil || len(n.Rules) != 3 || len(r.PresetRows) != 3 || r.Count < 100000 {
+		t.Fatal("incomplete pair", e)
+	}
+	for i, action := range []string{"reject", "direct", "direct"} {
+		if n.Rules[i].Action != action || r.PresetRows[i].Pending {
+			t.Fatal("wrong priority/action")
+		}
+	}
+	for _, q := range []struct {
+		query protocol.RouteQuery
+		want  string
+	}{
+		{protocol.RouteQuery{Domain: "yandex.ru", Port: 443}, "direct"},
+		{protocol.RouteQuery{Domain: "example.invalid", Port: 443}, "proxy"},
+		{protocol.RouteQuery{IP: "77.88.8.8", Port: 443}, "direct"},
+	} {
+		got, e := protocol.ExplainRoute(n, q.query)
+		if e != nil || got.Decision != q.want {
+			t.Fatalf("query %+v: %+v %v", q.query, got, e)
+		}
+	}
+	ads := n.RuleSets[0].Data.DomainSuffix
+	if len(ads) == 0 {
+		ads = n.RuleSets[0].Data.Domain
+	}
+	if len(ads) == 0 {
+		t.Fatal("no advertising domains")
+	}
+	blocked, e := protocol.ExplainRoute(n, protocol.RouteQuery{Domain: ads[0], IP: "77.88.8.8", Port: 443})
+	if e != nil || blocked.Decision != "reject" {
+		t.Fatal("ads did not take priority over RU IP", blocked, e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if partial, e := recommendedPresetDraft(ctx); e == nil || partial.RulesText != "" {
+		t.Fatal("failed pair produced partial rules")
+	}
+	t.Logf("paired preset: %d records", r.Count)
+}
+
 func TestPresetCatalogConfigurationAndProcessRules(t *testing.T) {
 	input := &NetworkInput{Mode: "default"}
 	for _, category := range []string{"", "google@@cn", "geoip:"} {

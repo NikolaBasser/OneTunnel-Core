@@ -444,3 +444,6 @@ UDP payloads, broken-session recovery and all three XUDP UDP443 policies.
 DoH3 and FakeIP additionally pass through the actual OS TUN. Startup tracing
 is available only in explicitly tagged safety builds; production WFP policy
 and permitted processes are unchanged.
+
+`network.presets.recommended` downloads geosite.dat + geoip.dat as one atomic preset draft: advertising reject first, category-ru domains direct, RU IP ranges direct, default proxy. It replaces only the preset bank when explicitly saved; custom rules are separate.
+

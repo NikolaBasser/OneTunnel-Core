@@ -755,6 +755,8 @@ func (a *Application) Handle(ctx context.Context, r Request) (any, error) {
 		return configurePresetDraft(r.NetworkInput, r.RuleImport, true)
 	case "network.presets.refresh":
 		return refreshPresetDraft(ctx, r.NetworkInput)
+	case "network.presets.recommended":
+		return recommendedPresetDraft(ctx)
 	case "network.rules.append":
 		return appendRuleDraft(r.NetworkInput, r.PolicyRule)
 	case "network.explain":
