@@ -94,6 +94,8 @@ func (a *Application) projectDesktop(reply DesktopReply, env Environment) Deskto
 	s := reply.Response.State
 	idle := !s.Active && !s.NeedsRecovery && !s.TrafficLocked && !s.Reconnecting && !env.NeedsRecovery
 	actions := DesktopActions{ConnectCaption: "Подключить", CanClose: !c.Busy}
+	// Selecting a library row only changes the view, never the running session.
+	actions.CanSelect = c.StorageReady
 	actions.CanCancelGroup = c.Busy && c.CheckingGroup
 	if !c.Busy {
 		actions.CanConnect = c.StorageReady && reply.Available && idle && c.SelectedID != ""
@@ -104,7 +106,6 @@ func (a *Application) projectDesktop(reply DesktopReply, env Environment) Deskto
 		actions.CanCheckGroup = actions.CanConnect
 		actions.CanEdit = actions.CanAdd && c.SelectedID != ""
 		actions.CanDelete = actions.CanEdit
-		actions.CanSelect = idle
 		actions.CanChangeMode = idle
 		actions.CanSave = actions.CanAdd
 		actions.CanInstallService = idle

@@ -58,5 +58,5 @@ func (a *Application) traySelect(id, token string) (string, error) {
 }
 
 func (a *Application) traySelectionAllowed() bool {
-	return a != nil && !a.desktopContext.Busy && a.desktopContext.StorageReady && a.refreshAllowed()
+	return a != nil && !a.desktopContext.Busy && a.desktopContext.StorageReady
 }

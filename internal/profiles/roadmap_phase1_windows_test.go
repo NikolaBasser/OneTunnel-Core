@@ -464,11 +464,11 @@ func TestTrayMetadataIsBoundedPrivateAndReadOnly(t *testing.T) {
 		t.Fatal("tray selection wrote the store")
 	}
 	app.desktopState.Response.State.Active = true
-	if activeView, err := app.trayProfilesView(); err != nil || activeView.CanSelect {
-		t.Fatalf("active profile selection was enabled: %+v %v", activeView, err)
+	if activeView, err := app.trayProfilesView(); err != nil || !activeView.CanSelect {
+		t.Fatalf("active connection blocked viewing profiles: %+v %v", activeView, err)
 	}
-	if _, err := app.traySelect(profiles[3].ID, view.Token); err == nil {
-		t.Fatal("selection allowed while connected")
+	if _, err := app.traySelect(profiles[3].ID, view.Token); err != nil {
+		t.Fatal("view selection blocked while connected", err)
 	}
 	app.desktopState.Response.State.Active = false
 	app.desktopContext.Busy = true

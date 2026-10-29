@@ -378,8 +378,6 @@ func TestGroupMutationsRespectRetainedStateAndNeverCallServiceOrDownloader(t *te
 	mutations := []Request{
 		{Version: 1, Command: "group.rename", Group: "Group", Name: "Renamed"},
 		{Version: 1, Command: "group.delete", Group: "Group"},
-		{Version: 1, Command: "group.expansion", Group: "Group", Expanded: false},
-		{Version: 1, Command: "group.expansion.all", Expanded: false},
 	}
 	for _, state := range []string{"active", "reconnecting", "recovery", "locked", "legacy"} {
 		app.desktopContext = DesktopContext{}

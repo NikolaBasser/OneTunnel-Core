@@ -157,7 +157,7 @@ func (a *Application) deleteGroup(group, token string) (Document, error) {
 }
 
 func (a *Application) setAllGroupsExpanded(expanded bool) (Document, error) {
-	if !a.groupMutationAllowed() {
+	if a == nil || a.Store == nil {
 		return Document{}, errors.New("group changes are unavailable")
 	}
 	doc, err := a.Store.Load()
@@ -190,7 +190,7 @@ func (a *Application) setAllGroupsExpanded(expanded bool) (Document, error) {
 }
 
 func (a *Application) setGroupExpanded(group string, expanded bool) (Document, error) {
-	if !a.groupMutationAllowed() {
+	if a == nil || a.Store == nil {
 		return Document{}, errors.New("group changes are unavailable")
 	}
 	doc, err := a.Store.Load()
