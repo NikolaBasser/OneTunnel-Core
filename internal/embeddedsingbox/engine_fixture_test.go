@@ -28,21 +28,31 @@ func freePort(t *testing.T) int {
 	t.Helper()
 	portMu.Lock()
 	defer portMu.Unlock()
-	for attempt := 0; attempt < 100; attempt++ {
+	// Keep rejected TCP candidates bound until selection ends. Windows may
+	// otherwise return the same just-closed port throughout a tight retry loop.
+	var rejected []net.Listener
+	defer func() {
+		for _, listener := range rejected {
+			listener.Close()
+		}
+	}()
+	for attempt := 0; attempt < 512; attempt++ {
 		l, e := net.Listen("tcp4", "127.0.0.1:0")
 		if e != nil {
 			t.Fatal(e)
 		}
 		p := l.Addr().(*net.TCPAddr).Port
-		u, e := net.ListenPacket("udp4", fmt.Sprintf("127.0.0.1:%d", p))
-		l.Close()
-		if e != nil {
-			continue
-		}
-		u.Close()
 		if usedPorts[p] {
+			rejected = append(rejected, l)
 			continue
 		}
+		u, e := net.ListenPacket("udp4", fmt.Sprintf("127.0.0.1:%d", p))
+		if e != nil {
+			rejected = append(rejected, l)
+			continue
+		}
+		l.Close()
+		u.Close()
 		usedPorts[p] = true
 		// Reservation lives as long as this test, not the entire -count process.
 		// Engine cleanup is registered later and therefore closes listeners first.
